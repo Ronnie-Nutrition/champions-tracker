@@ -353,9 +353,10 @@ export default function HomePage() {
           editable
           onEdit={() => editField("retail")}
           quickButtons={[
-            { delta: -25, label: "−$25", minus: true },
+            { delta: -5, label: "−$5", minus: true },
+            { delta: 1, label: "+$1" },
+            { delta: 5, label: "+$5" },
             { delta: 25, label: "+$25" },
-            { delta: 50, label: "+$50" },
             { delta: 100, label: "+$100" },
           ]}
           onBump={(n) => bump("retail", n)}
