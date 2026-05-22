@@ -1,16 +1,47 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { Suspense, useEffect, useState, type FormEvent } from "react";
+import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 type Status = "idle" | "sending" | "sent" | "error";
 
 export default function SignupPage() {
+  return (
+    <Suspense fallback={<SignupShell />}>
+      <SignupForm />
+    </Suspense>
+  );
+}
+
+function SignupShell() {
+  return (
+    <div className="phone">
+      <div className="topbar">
+        <div className="logo">
+          THE <span>CHAMPIONS</span>
+        </div>
+        <div className="topbar-meta">Sign in</div>
+      </div>
+      <div className="page active" />
+    </div>
+  );
+}
+
+function SignupForm() {
+  const searchParams = useSearchParams();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
+
+  // Pre-fill leader code from ?code=XXXX so a leader can share
+  // https://thechampions.club/signup?code=RONNIE2026 with a new owner.
+  useEffect(() => {
+    const fromUrl = searchParams.get("code");
+    if (fromUrl) setCode(fromUrl.toUpperCase());
+  }, [searchParams]);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
