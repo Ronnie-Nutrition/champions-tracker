@@ -102,9 +102,9 @@ const SLIDES: Slide[] = [
     headline: "Your unique invite link.",
     body: (
       <>
-        <p style={p}>Every leader gets a personal code — yours is <strong style={{ color: "#d4ff3f" }}>RONNIE2026</strong>.</p>
+        <p style={p}>Every leader gets a personal code — yours is <strong style={{ color: "#d4ff3f" }}>DEMO2026</strong>.</p>
         <p style={p}>The shareable link bakes the code in, so the new owner doesn't have to type anything:</p>
-        <div style={linkBox}>https://thechampions.club/signup?code=RONNIE2026</div>
+        <div style={linkBox}>https://thechampions.club/signup?code=DEMO2026</div>
         <p style={{ ...p, color: "#9ca3af", fontSize: 14 }}>
           Send it in iMessage, in your Herbalife group chat, in your Instagram bio. Anywhere.
         </p>
@@ -592,7 +592,7 @@ function ShareCard() {
           border: "1px solid #2d3530",
         }}
       >
-        thechampions.club/signup?code=<strong>RONNIE2026</strong>
+        thechampions.club/signup?code=<strong>DEMO2026</strong>
       </div>
       <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
         <ShareBtn label="📱 iMessage" />
@@ -783,7 +783,7 @@ function PhoneMock({ screen }: { screen: string }) {
         </div>
         <MiniInput label="Your name" value="Maria Lopez" />
         <MiniInput label="Email" value="maria@example.com" />
-        <MiniInput label="Leader code" value="RONNIE2026" highlight />
+        <MiniInput label="Leader code" value="DEMO2026" highlight />
         <div
           style={{
             background: "#d4ff3f",
