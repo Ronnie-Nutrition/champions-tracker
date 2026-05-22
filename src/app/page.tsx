@@ -11,7 +11,13 @@ import {
 } from "@/lib/dates";
 
 type PageKey = "home" | "log" | "week" | "group" | "admin";
-type DailyField = "cons" | "sales" | "newcust" | "deliv" | "social";
+type DailyField =
+  | "cons"
+  | "consSales"
+  | "retail"
+  | "newcust"
+  | "deliv"
+  | "social";
 
 type ConnState =
   | { kind: "checking" }
@@ -22,10 +28,20 @@ type LoadState = "loading" | "ready" | "error";
 
 const ZERO_DAILY: Record<DailyField, number> = {
   cons: 0,
-  sales: 0,
+  consSales: 0,
+  retail: 0,
   newcust: 0,
   deliv: 0,
   social: 0,
+};
+
+const FIELD_LABELS: Record<DailyField, string> = {
+  cons: "Total consumptions",
+  consSales: "Total consumption sales ($)",
+  retail: "Total retail sales ($)",
+  newcust: "New customers today",
+  deliv: "Deliveries today",
+  social: "Social posts today",
 };
 
 export default function HomePage() {
@@ -72,7 +88,9 @@ export default function HomePage() {
 
       const { data, error: logErr } = await supabase
         .from("daily_logs")
-        .select("consumptions, sales, new_customers, deliveries, social_posts")
+        .select(
+          "consumptions, consumption_sales, retail_sales, new_customers, deliveries, social_posts"
+        )
         .eq("owner_id", TEST_OWNER_ID)
         .eq("log_date", todayLocalISO())
         .maybeSingle();
@@ -84,7 +102,8 @@ export default function HomePage() {
       if (data) {
         setDaily({
           cons: data.consumptions ?? 0,
-          sales: data.sales ?? 0,
+          consSales: data.consumption_sales ?? 0,
+          retail: data.retail_sales ?? 0,
           newcust: data.new_customers ?? 0,
           deliv: data.deliveries ?? 0,
           social: data.social_posts ?? 0,
@@ -112,8 +131,10 @@ export default function HomePage() {
   }
 
   function editField(field: DailyField) {
-    const label = field === "sales" ? "Total sales ($)" : "Total consumptions";
-    const v = window.prompt(`${label} — type exact amount:`, String(daily[field]));
+    const v = window.prompt(
+      `${FIELD_LABELS[field]} — type exact amount:`,
+      String(daily[field])
+    );
     if (v === null) return;
     const n = parseInt(v.replace(/[^0-9]/g, ""), 10);
     if (!Number.isNaN(n) && n >= 0) {
@@ -135,7 +156,8 @@ export default function HomePage() {
         owner_id: TEST_OWNER_ID,
         log_date: todayLocalISO(),
         consumptions: daily.cons,
-        sales: daily.sales,
+        consumption_sales: daily.consSales,
+        retail_sales: daily.retail,
         new_customers: daily.newcust,
         deliveries: daily.deliv,
         social_posts: daily.social,
@@ -186,7 +208,7 @@ export default function HomePage() {
   }
 
   const consPct = Math.min(100, daily.cons);
-  const salesPct = Math.min(100, daily.sales / 10);
+  const consSalesPct = Math.min(100, daily.consSales / 10);
   const socialPct = Math.min(100, (daily.social / 3) * 100);
 
   return (
@@ -224,14 +246,20 @@ export default function HomePage() {
           </div>
           <div className="prog-row">
             <div className="prog-head">
-              <span className="prog-label">Sales</span>
+              <span className="prog-label">Consumption Sales</span>
               <span className="prog-val">
-                ${daily.sales}
+                ${daily.consSales}
                 <span className="target"> / $1,000</span>
               </span>
             </div>
             <div className="bar">
-              <div style={{ width: `${salesPct}%` }} />
+              <div style={{ width: `${consSalesPct}%` }} />
+            </div>
+          </div>
+          <div className="prog-row">
+            <div className="prog-head">
+              <span className="prog-label">Retail Sales</span>
+              <span className="prog-val">${daily.retail}</span>
             </div>
           </div>
           <div className="prog-row">
@@ -299,12 +327,12 @@ export default function HomePage() {
 
         <NumField
           icon="💵"
-          label="Sales ($)"
-          value={daily.sales}
+          label="Consumption Sales ($)"
+          value={daily.consSales}
           valuePrefix="$"
           goalHint="Goal: $1,000"
           editable
-          onEdit={() => editField("sales")}
+          onEdit={() => editField("consSales")}
           quickButtons={[
             { delta: -5, label: "−$5", minus: true },
             { delta: 1, label: "+$1" },
@@ -312,7 +340,25 @@ export default function HomePage() {
             { delta: 10, label: "+$10" },
             { delta: 25, label: "+$25" },
           ]}
-          onBump={(n) => bump("sales", n)}
+          onBump={(n) => bump("consSales", n)}
+          subLabel="— tap number to type exact amount"
+        />
+
+        <NumField
+          icon="📦"
+          label="Retail Sales ($)"
+          value={daily.retail}
+          valuePrefix="$"
+          goalHint="Containers / programs"
+          editable
+          onEdit={() => editField("retail")}
+          quickButtons={[
+            { delta: -25, label: "−$25", minus: true },
+            { delta: 25, label: "+$25" },
+            { delta: 50, label: "+$50" },
+            { delta: 100, label: "+$100" },
+          ]}
+          onBump={(n) => bump("retail", n)}
           subLabel="— tap number to type exact amount"
         />
 
@@ -371,7 +417,8 @@ export default function HomePage() {
         <div className="h-section">Auto-Filled From Your Dailies</div>
         <div className="auto-grid">
           <AutoCell label="Consumptions" value="412" />
-          <AutoCell label="Sales" value="$3,890" />
+          <AutoCell label="Consumption Sales" value="$3,890" />
+          <AutoCell label="Retail Sales" value="$0" />
           <AutoCell label="New Customers" value="9" />
           <AutoCell label="Deliveries" value="6" />
           <AutoCell label="Social Posts" value="22" wide />
@@ -422,8 +469,12 @@ export default function HomePage() {
           <input type="number" placeholder="500" defaultValue={500} />
         </div>
         <div className="input-row">
-          <label>Sales goal ($)</label>
+          <label>Consumption sales goal ($)</label>
           <input type="number" placeholder="5000" defaultValue={5000} />
+        </div>
+        <div className="input-row">
+          <label>Retail sales goal ($)</label>
+          <input type="number" placeholder="1000" defaultValue={1000} />
         </div>
         <div className="input-row">
           <label>New customers goal</label>

@@ -30,16 +30,17 @@ create index if not exists owners_auth_user_idx   on owners(auth_user_id);
 
 -- 3) Daily logs — one row per owner per day
 create table if not exists daily_logs (
-  id             uuid primary key default gen_random_uuid(),
-  owner_id       uuid references owners(id) on delete cascade,
-  log_date       date not null,
-  consumptions   int  default 0,
-  sales          int  default 0,   -- whole dollars
-  new_customers  int  default 0,
-  deliveries     int  default 0,
-  social_posts   int  default 0,
-  created_at     timestamptz default now(),
-  updated_at     timestamptz default now(),
+  id                 uuid primary key default gen_random_uuid(),
+  owner_id           uuid references owners(id) on delete cascade,
+  log_date           date not null,
+  consumptions       int  default 0,
+  consumption_sales  int  default 0,   -- $ from drinks consumed in-club
+  retail_sales       int  default 0,   -- $ from closed containers / programs
+  new_customers      int  default 0,
+  deliveries         int  default 0,
+  social_posts       int  default 0,
+  created_at         timestamptz default now(),
+  updated_at         timestamptz default now(),
   unique (owner_id, log_date)
 );
 create index if not exists daily_logs_owner_date_idx on daily_logs(owner_id, log_date desc);
@@ -55,7 +56,8 @@ create table if not exists weekly_wrapups (
   biggest_win                 text,
   biggest_lesson              text,
   consumptions_goal           int,
-  sales_goal                  int,
+  consumption_sales_goal      int,
+  retail_sales_goal           int,
   new_customers_goal          int,
   submitted_at                timestamptz default now(),
   unique (owner_id, week_start)
