@@ -2,44 +2,96 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { ensureTestOwner, TEST_OWNER_ID } from "@/lib/owner";
+import {
+  loggingLabel,
+  todayLabel,
+  todayLocalISO,
+  weekLabel,
+} from "@/lib/dates";
 
 type PageKey = "home" | "log" | "week" | "group" | "admin";
 type DailyField = "cons" | "sales" | "newcust" | "deliv" | "social";
-
-const TODAY_LABEL = "Today — Thursday, May 21";
-const WEEK_LABEL = "Week of May 19";
 
 type ConnState =
   | { kind: "checking" }
   | { kind: "ok"; codes: number }
   | { kind: "error"; message: string };
 
+type LoadState = "loading" | "ready" | "error";
+
+const ZERO_DAILY: Record<DailyField, number> = {
+  cons: 0,
+  sales: 0,
+  newcust: 0,
+  deliv: 0,
+  social: 0,
+};
+
 export default function HomePage() {
   const [page, setPage] = useState<PageKey>("home");
-  const [daily, setDaily] = useState<Record<DailyField, number>>({
-    cons: 47,
-    sales: 423,
-    newcust: 2,
-    deliv: 1,
-    social: 2,
-  });
+  const [daily, setDaily] = useState<Record<DailyField, number>>(ZERO_DAILY);
   const [customerAppreciation, setCustomerAppreciation] = useState<"yes" | "no">(
     "yes"
   );
   const [toast, setToast] = useState<string | null>(null);
   const [conn, setConn] = useState<ConnState>({ kind: "checking" });
+  const [loadState, setLoadState] = useState<LoadState>("loading");
+  const [saving, setSaving] = useState(false);
+  // Set in useEffect to avoid SSR/hydration date mismatch.
+  const [labels, setLabels] = useState({
+    today: "Today",
+    logging: "Logging",
+    week: "This Week",
+  });
 
   useEffect(() => {
-    supabase
-      .from("leader_codes")
-      .select("code", { count: "exact", head: true })
-      .then(({ count, error }) => {
-        if (error) {
-          setConn({ kind: "error", message: error.message });
-        } else {
-          setConn({ kind: "ok", codes: count ?? 0 });
-        }
-      });
+    setLabels({
+      today: todayLabel(),
+      logging: loggingLabel(),
+      week: weekLabel(),
+    });
+
+    (async () => {
+      const { count, error: codeErr } = await supabase
+        .from("leader_codes")
+        .select("code", { count: "exact", head: true });
+      if (codeErr) {
+        setConn({ kind: "error", message: codeErr.message });
+        setLoadState("error");
+        return;
+      }
+      setConn({ kind: "ok", codes: count ?? 0 });
+
+      const { error: ownerErr } = await ensureTestOwner();
+      if (ownerErr) {
+        setConn({ kind: "error", message: `owner: ${ownerErr.message}` });
+        setLoadState("error");
+        return;
+      }
+
+      const { data, error: logErr } = await supabase
+        .from("daily_logs")
+        .select("consumptions, sales, new_customers, deliveries, social_posts")
+        .eq("owner_id", TEST_OWNER_ID)
+        .eq("log_date", todayLocalISO())
+        .maybeSingle();
+      if (logErr) {
+        setConn({ kind: "error", message: `log: ${logErr.message}` });
+        setLoadState("error");
+        return;
+      }
+      if (data) {
+        setDaily({
+          cons: data.consumptions ?? 0,
+          sales: data.sales ?? 0,
+          newcust: data.new_customers ?? 0,
+          deliv: data.deliveries ?? 0,
+          social: data.social_posts ?? 0,
+        });
+      }
+      setLoadState("ready");
+    })();
   }, []);
 
   const headerMeta = page === "admin" ? "Admin • Enrique" : "Owner • Enrique";
@@ -75,7 +127,27 @@ export default function HomePage() {
     window.setTimeout(() => setToast(null), 1800);
   }
 
-  function saveDaily() {
+  async function saveDaily() {
+    if (saving || loadState !== "ready") return;
+    setSaving(true);
+    const { error } = await supabase.from("daily_logs").upsert(
+      {
+        owner_id: TEST_OWNER_ID,
+        log_date: todayLocalISO(),
+        consumptions: daily.cons,
+        sales: daily.sales,
+        new_customers: daily.newcust,
+        deliveries: daily.deliv,
+        social_posts: daily.social,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "owner_id,log_date" }
+    );
+    setSaving(false);
+    if (error) {
+      showToast(`❌ ${error.message}`);
+      return;
+    }
     showToast("🔥 Saved — streak alive!");
     window.setTimeout(() => go("home"), 600);
   }
@@ -135,7 +207,7 @@ export default function HomePage() {
           <div className="streak-label">Day Streak</div>
         </div>
 
-        <div className="date-row">{TODAY_LABEL}</div>
+        <div className="date-row">{labels.today}</div>
 
         <div className="card">
           <div className="prog-row">
@@ -206,7 +278,7 @@ export default function HomePage() {
 
       {/* DAILY LOG */}
       <div className={`page ${page === "log" ? "active" : ""}`}>
-        <div className="date-row">Logging — Thursday, May 21</div>
+        <div className="date-row">{labels.logging}</div>
 
         <NumField
           icon="🥤"
@@ -280,8 +352,12 @@ export default function HomePage() {
           onBump={(n) => bump("social", n)}
         />
 
-        <button className="btn-primary" onClick={saveDaily}>
-          SAVE TODAY
+        <button
+          className="btn-primary"
+          onClick={saveDaily}
+          disabled={saving || loadState !== "ready"}
+        >
+          {saving ? "SAVING…" : "SAVE TODAY"}
         </button>
         <button className="btn-secondary" onClick={() => go("home")}>
           Cancel
@@ -290,7 +366,7 @@ export default function HomePage() {
 
       {/* WEEKLY WRAP-UP */}
       <div className={`page ${page === "week" ? "active" : ""}`}>
-        <div className="date-row">🏆 Sunday Wrap-Up — {WEEK_LABEL}</div>
+        <div className="date-row">🏆 Sunday Wrap-Up — {labels.week}</div>
 
         <div className="h-section">Auto-Filled From Your Dailies</div>
         <div className="auto-grid">
@@ -361,7 +437,7 @@ export default function HomePage() {
 
       {/* GROUP / LEADERBOARD */}
       <div className={`page ${page === "group" ? "active" : ""}`}>
-        <div className="date-row">The Champions — {WEEK_LABEL}</div>
+        <div className="date-row">The Champions — {labels.week}</div>
 
         <div className="card">
           <div className="h-section" style={{ margin: "0 0 12px" }}>
@@ -403,7 +479,7 @@ export default function HomePage() {
 
       {/* ADMIN */}
       <div className={`page ${page === "admin" ? "active" : ""}`}>
-        <div className="date-row">⭐ Admin — {WEEK_LABEL}</div>
+        <div className="date-row">⭐ Admin — {labels.week}</div>
 
         <div className="card">
           <div className="h-section" style={{ margin: "0 0 12px" }}>
