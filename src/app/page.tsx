@@ -1,14 +1,23 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { ensureTestOwner, TEST_OWNER_ID } from "@/lib/owner";
+import { getOrCreateOwner, signOut, type Owner } from "@/lib/owner";
 import {
   loggingLabel,
   todayLabel,
   todayLocalISO,
   weekLabel,
 } from "@/lib/dates";
+import {
+  computeStreak,
+  EMPTY_WEEK,
+  formatMoney,
+  sumThisWeek,
+  type DailyLogRow,
+  type WeekSums,
+} from "@/lib/aggregate";
 
 type PageKey = "home" | "log" | "week" | "group" | "admin";
 type DailyField =
@@ -45,6 +54,7 @@ const FIELD_LABELS: Record<DailyField, string> = {
 };
 
 export default function HomePage() {
+  const router = useRouter();
   const [page, setPage] = useState<PageKey>("home");
   const [daily, setDaily] = useState<Record<DailyField, number>>(ZERO_DAILY);
   const [customerAppreciation, setCustomerAppreciation] = useState<"yes" | "no">(
@@ -54,6 +64,9 @@ export default function HomePage() {
   const [conn, setConn] = useState<ConnState>({ kind: "checking" });
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [saving, setSaving] = useState(false);
+  const [owner, setOwner] = useState<Owner | null>(null);
+  const [streak, setStreak] = useState<number>(0);
+  const [weekSums, setWeekSums] = useState<WeekSums>(EMPTY_WEEK);
   // Set in useEffect to avoid SSR/hydration date mismatch.
   const [labels, setLabels] = useState({
     today: "Today",
@@ -68,52 +81,106 @@ export default function HomePage() {
       week: weekLabel(),
     });
 
-    (async () => {
-      const { count, error: codeErr } = await supabase
-        .from("leader_codes")
-        .select("code", { count: "exact", head: true });
-      if (codeErr) {
-        setConn({ kind: "error", message: codeErr.message });
-        setLoadState("error");
+    let cancelled = false;
+    let loadInFlight = false;
+
+    async function loadOwnerAndToday() {
+      if (loadInFlight) return;
+      loadInFlight = true;
+      try {
+        const lookup = await getOrCreateOwner();
+        if (cancelled) return;
+        if (
+          lookup.kind === "no-session" ||
+          lookup.kind === "incomplete-signup"
+        ) {
+          router.replace("/signup");
+          return;
+        }
+        if (lookup.kind === "error") {
+          setConn({ kind: "error", message: `owner: ${lookup.message}` });
+          setLoadState("error");
+          return;
+        }
+        const me = lookup.owner;
+        setOwner(me);
+        setConn({ kind: "ok", codes: 0 });
+
+        // Pull the last ~5 weeks of daily_logs in one shot. Today's row
+        // populates the form; the full window feeds streak + this-week sums.
+        const sinceDate = new Date();
+        sinceDate.setDate(sinceDate.getDate() - 35);
+        const { data: history, error: logErr } = await supabase
+          .from("daily_logs")
+          .select(
+            "log_date, consumptions, consumption_sales, retail_sales, new_customers, deliveries, social_posts"
+          )
+          .eq("owner_id", me.id)
+          .gte("log_date", todayLocalISO(sinceDate))
+          .lte("log_date", todayLocalISO())
+          .order("log_date", { ascending: false });
+        if (cancelled) return;
+        if (logErr) {
+          setConn({ kind: "error", message: `log: ${logErr.message}` });
+          setLoadState("error");
+          return;
+        }
+
+        const rows = (history ?? []) as DailyLogRow[];
+        const todayISO = todayLocalISO();
+        const todayRow = rows.find((r) => r.log_date === todayISO);
+        if (todayRow) {
+          setDaily({
+            cons: todayRow.consumptions ?? 0,
+            consSales: todayRow.consumption_sales ?? 0,
+            retail: todayRow.retail_sales ?? 0,
+            newcust: todayRow.new_customers ?? 0,
+            deliv: todayRow.deliveries ?? 0,
+            social: todayRow.social_posts ?? 0,
+          });
+        }
+        setStreak(computeStreak(rows));
+        setWeekSums(sumThisWeek(rows));
+        setLoadState("ready");
+      } finally {
+        loadInFlight = false;
+      }
+    }
+
+    // onAuthStateChange fires INITIAL_SESSION immediately after subscribe
+    // with whatever the current session is (null on a fresh load, populated
+    // once a magic-link hash has been parsed). It also fires SIGNED_IN when
+    // a magic link lands and is processed asynchronously, so this single
+    // listener covers both the cold-load and magic-link-arrival cases.
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (cancelled) return;
+      if (event === "SIGNED_OUT") {
+        router.replace("/signup");
         return;
       }
-      setConn({ kind: "ok", codes: count ?? 0 });
-
-      const { error: ownerErr } = await ensureTestOwner();
-      if (ownerErr) {
-        setConn({ kind: "error", message: `owner: ${ownerErr.message}` });
-        setLoadState("error");
+      if (!session) {
+        // No session yet (INITIAL_SESSION with null). Bounce to signup.
+        router.replace("/signup");
         return;
       }
+      // We have a session — load owner + today's row.
+      loadOwnerAndToday();
+    });
 
-      const { data, error: logErr } = await supabase
-        .from("daily_logs")
-        .select(
-          "consumptions, consumption_sales, retail_sales, new_customers, deliveries, social_posts"
-        )
-        .eq("owner_id", TEST_OWNER_ID)
-        .eq("log_date", todayLocalISO())
-        .maybeSingle();
-      if (logErr) {
-        setConn({ kind: "error", message: `log: ${logErr.message}` });
-        setLoadState("error");
-        return;
-      }
-      if (data) {
-        setDaily({
-          cons: data.consumptions ?? 0,
-          consSales: data.consumption_sales ?? 0,
-          retail: data.retail_sales ?? 0,
-          newcust: data.new_customers ?? 0,
-          deliv: data.deliveries ?? 0,
-          social: data.social_posts ?? 0,
-        });
-      }
-      setLoadState("ready");
-    })();
-  }, []);
+    return () => {
+      cancelled = true;
+      sub.subscription.unsubscribe();
+    };
+  }, [router]);
 
-  const headerMeta = page === "admin" ? "Admin • Enrique" : "Owner • Enrique";
+  const headerMeta = owner
+    ? `${page === "admin" ? "Admin" : "Owner"} • ${owner.name}`
+    : "…";
+
+  async function handleSignOut() {
+    await signOut();
+    router.replace("/signup");
+  }
 
   function go(p: PageKey) {
     setPage(p);
@@ -148,12 +215,30 @@ export default function HomePage() {
     window.setTimeout(() => setToast(null), 1800);
   }
 
+  async function refreshStats(forOwner: Owner) {
+    const sinceDate = new Date();
+    sinceDate.setDate(sinceDate.getDate() - 35);
+    const { data: history, error } = await supabase
+      .from("daily_logs")
+      .select(
+        "log_date, consumptions, consumption_sales, retail_sales, new_customers, deliveries, social_posts"
+      )
+      .eq("owner_id", forOwner.id)
+      .gte("log_date", todayLocalISO(sinceDate))
+      .lte("log_date", todayLocalISO())
+      .order("log_date", { ascending: false });
+    if (error) return;
+    const rows = (history ?? []) as DailyLogRow[];
+    setStreak(computeStreak(rows));
+    setWeekSums(sumThisWeek(rows));
+  }
+
   async function saveDaily() {
-    if (saving || loadState !== "ready") return;
+    if (saving || loadState !== "ready" || !owner) return;
     setSaving(true);
     const { error } = await supabase.from("daily_logs").upsert(
       {
-        owner_id: TEST_OWNER_ID,
+        owner_id: owner.id,
         log_date: todayLocalISO(),
         consumptions: daily.cons,
         consumption_sales: daily.consSales,
@@ -170,6 +255,9 @@ export default function HomePage() {
       showToast(`❌ ${error.message}`);
       return;
     }
+    // Re-fetch so streak + this-week sums reflect today's save before
+    // we navigate back to home.
+    await refreshStats(owner);
     showToast("🔥 Saved — streak alive!");
     window.setTimeout(() => go("home"), 600);
   }
@@ -211,6 +299,52 @@ export default function HomePage() {
   const consSalesPct = Math.min(100, daily.consSales / 10);
   const socialPct = Math.min(100, (daily.social / 3) * 100);
 
+  // Don't render the broken half-loaded home screen while we're still
+  // checking auth + fetching the owner. The auth effect will either flip
+  // loadState to "ready" or redirect to /signup.
+  if (loadState === "loading" || !owner) {
+    return (
+      <div className="phone">
+        <div className="topbar">
+          <div className="logo">
+            THE <span>CHAMPIONS</span>
+          </div>
+          <div className="topbar-meta">…</div>
+        </div>
+        <div
+          className="page active"
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            minHeight: "60vh",
+            color: "var(--text-dim)",
+            fontSize: 13,
+            letterSpacing: 1,
+            textTransform: "uppercase",
+          }}
+        >
+          {conn.kind === "error" ? (
+            <>
+              <div style={{ color: "var(--danger)", marginBottom: 12 }}>
+                ❌ {conn.message}
+              </div>
+              <button
+                className="btn-secondary"
+                onClick={() => router.replace("/signup")}
+              >
+                Go to sign in
+              </button>
+            </>
+          ) : (
+            <>Loading your data…</>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="phone">
       <div className="topbar">
@@ -222,10 +356,10 @@ export default function HomePage() {
 
       {/* HOME */}
       <div className={`page ${page === "home" ? "active" : ""}`}>
-        <ConnStatus state={conn} />
+        {conn.kind === "error" && <ConnStatus state={conn} />}
         <div className="streak">
           <div className="streak-emoji">🔥</div>
-          <div className="streak-num">14</div>
+          <div className="streak-num">{streak}</div>
           <div className="streak-label">Day Streak</div>
         </div>
 
@@ -283,18 +417,21 @@ export default function HomePage() {
         <div className="h-section">This Week So Far</div>
         <div className="week-snap">
           <div>
-            <div className="num">312</div>
+            <div className="num">{weekSums.consumptions}</div>
             <div className="lbl">Drinks</div>
           </div>
           <div>
-            <div className="num">$2,847</div>
+            <div className="num">
+              {formatMoney(weekSums.consumption_sales + weekSums.retail_sales)}
+            </div>
             <div className="lbl">Sales</div>
           </div>
           <div>
             <div className="num">
-              #3
+              —
               <span style={{ color: "var(--text-mute)", fontSize: 13 }}>
-                /12
+                {" "}
+                soon
               </span>
             </div>
             <div className="lbl">Group Rank</div>
@@ -417,12 +554,28 @@ export default function HomePage() {
 
         <div className="h-section">Auto-Filled From Your Dailies</div>
         <div className="auto-grid">
-          <AutoCell label="Consumptions" value="412" />
-          <AutoCell label="Consumption Sales" value="$3,890" />
-          <AutoCell label="Retail Sales" value="$0" />
-          <AutoCell label="New Customers" value="9" />
-          <AutoCell label="Deliveries" value="6" />
-          <AutoCell label="Social Posts" value="22" wide />
+          <AutoCell label="Consumptions" value={String(weekSums.consumptions)} />
+          <AutoCell
+            label="Consumption Sales"
+            value={formatMoney(weekSums.consumption_sales)}
+          />
+          <AutoCell
+            label="Retail Sales"
+            value={formatMoney(weekSums.retail_sales)}
+          />
+          <AutoCell
+            label="New Customers"
+            value={String(weekSums.new_customers)}
+          />
+          <AutoCell
+            label="Deliveries"
+            value={String(weekSums.deliveries)}
+          />
+          <AutoCell
+            label="Social Posts"
+            value={String(weekSums.social_posts)}
+            wide
+          />
         </div>
 
         <div className="h-section">Fill In The Rest</div>
@@ -572,6 +725,11 @@ export default function HomePage() {
             <div className="pulse-label">2 owners didn&apos;t submit wrap-up</div>
           </div>
         </div>
+
+        <div className="h-section">Account</div>
+        <button className="btn-secondary" onClick={handleSignOut}>
+          Sign out
+        </button>
 
         <div className="tagline">2,000+ clubs and beyond.</div>
       </div>
