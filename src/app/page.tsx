@@ -1,12 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
 
 type PageKey = "home" | "log" | "week" | "group" | "admin";
 type DailyField = "cons" | "sales" | "newcust" | "deliv" | "social";
 
 const TODAY_LABEL = "Today — Thursday, May 21";
 const WEEK_LABEL = "Week of May 19";
+
+type ConnState =
+  | { kind: "checking" }
+  | { kind: "ok"; codes: number }
+  | { kind: "error"; message: string };
 
 export default function HomePage() {
   const [page, setPage] = useState<PageKey>("home");
@@ -21,6 +27,20 @@ export default function HomePage() {
     "yes"
   );
   const [toast, setToast] = useState<string | null>(null);
+  const [conn, setConn] = useState<ConnState>({ kind: "checking" });
+
+  useEffect(() => {
+    supabase
+      .from("leader_codes")
+      .select("code", { count: "exact", head: true })
+      .then(({ count, error }) => {
+        if (error) {
+          setConn({ kind: "error", message: error.message });
+        } else {
+          setConn({ kind: "ok", codes: count ?? 0 });
+        }
+      });
+  }, []);
 
   const headerMeta = page === "admin" ? "Admin • Enrique" : "Owner • Enrique";
 
@@ -108,6 +128,7 @@ export default function HomePage() {
 
       {/* HOME */}
       <div className={`page ${page === "home" ? "active" : ""}`}>
+        <ConnStatus state={conn} />
         <div className="streak">
           <div className="streak-emoji">🔥</div>
           <div className="streak-num">14</div>
@@ -584,6 +605,61 @@ function LBRow({
       <div className="stat">{drinks}</div>
       <div className="stat">{sales}</div>
       <div className="streak-mini">{streak}</div>
+    </div>
+  );
+}
+
+function ConnStatus({ state }: { state: ConnState }) {
+  const baseStyle: React.CSSProperties = {
+    fontSize: 11,
+    fontWeight: 700,
+    padding: "8px 12px",
+    borderRadius: 8,
+    marginBottom: 12,
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+    border: "1px solid",
+  };
+  if (state.kind === "checking") {
+    return (
+      <div
+        style={{
+          ...baseStyle,
+          background: "rgba(156,163,175,0.1)",
+          color: "var(--text-dim)",
+          borderColor: "var(--border)",
+        }}
+      >
+        ⏳ Checking Supabase…
+      </div>
+    );
+  }
+  if (state.kind === "ok") {
+    return (
+      <div
+        style={{
+          ...baseStyle,
+          background: "rgba(74,222,128,0.1)",
+          color: "var(--success)",
+          borderColor: "var(--success)",
+        }}
+      >
+        ✅ Supabase connected · {state.codes} leader code
+        {state.codes === 1 ? "" : "s"}
+      </div>
+    );
+  }
+  return (
+    <div
+      style={{
+        ...baseStyle,
+        background: "rgba(248,113,113,0.1)",
+        color: "var(--danger)",
+        borderColor: "var(--danger)",
+        fontSize: 10,
+      }}
+    >
+      ❌ Supabase error: {state.message}
     </div>
   );
 }
