@@ -90,7 +90,7 @@ const SLIDES: Slide[] = [
     headline: "Three roles. One app.",
     body: (
       <div style={{ display: "grid", gap: 14, marginTop: 10 }}>
-        <RoleCard tag="⭐ ADMIN" name="Ronnie + Enrique" who="Sees every leader's group. Coaches the coaches." />
+        <RoleCard tag="⭐ ADMIN" name="Enrique" who="Sees every leader's group. Coaches the coaches." />
         <RoleCard tag="🎯 LEADER" name="You — the coach" who="Sees your downline of nutrition club owners. Sends the invite link." />
         <RoleCard tag="🔥 OWNER" name="Each club owner" who="Logs drinks, sales, customers daily. Builds the streak." />
       </div>
@@ -171,7 +171,7 @@ const SLIDES: Slide[] = [
   {
     kind: "split",
     eyebrow: "The daily habit",
-    headline: "30 seconds. Five numbers.",
+    headline: "30 seconds. Six numbers.",
     body: (
       <>
         <p style={p}>Tap the bump buttons or type the exact amount. Done.</p>
@@ -180,6 +180,7 @@ const SLIDES: Slide[] = [
           <li>Consumption sales ($)</li>
           <li>Retail sales ($)</li>
           <li>New customers</li>
+          <li>Deliveries / tea drops</li>
           <li>Social posts</li>
         </ul>
         <p style={{ ...p, color: "#9ca3af", fontSize: 14 }}>
@@ -238,12 +239,12 @@ const SLIDES: Slide[] = [
   {
     kind: "split",
     eyebrow: "The admin view",
-    headline: "Ronnie + Enrique see everything.",
+    headline: "Enrique sees everything.",
     body: (
       <>
         <p style={p}>Group pulse across every leader. By-leader-code rollups. &ldquo;Needs attention&rdquo; alerts when someone's slipping.</p>
         <p style={{ ...p, color: "#9ca3af", fontSize: 14 }}>
-          You coach the coaches without ever asking for a status update.
+          The admin coaches the coaches without ever asking for a status update.
         </p>
       </>
     ),
@@ -809,12 +810,15 @@ function PhoneMock({ screen }: { screen: string }) {
         <LogField icon="🥤" label="Consumptions" value="87" hint="Goal: 100" buttons={["−1", "+1", "+5", "+10"]} />
         <LogField icon="💵" label="Consumption Sales" value="$820" hint="Goal: $1,000" buttons={["+$1", "+$5", "+$10", "+$25"]} />
         <LogField icon="📦" label="Retail Sales" value="$245" hint="Containers" buttons={["+$5", "+$25", "+$100"]} />
+        <LogRowCompact icon="🙋" label="New Customers" value="4" buttons={["−1", "+1"]} />
+        <LogRowCompact icon="🚚" label="Deliveries / Tea Drops" value="6" buttons={["−1", "+1"]} />
+        <LogRowCompact icon="📱" label="Social Posts" value="3" buttons={["−1", "+1"]} />
         <div
           style={{
             background: "#d4ff3f",
             color: "#000",
             textAlign: "center",
-            padding: 12,
+            padding: 11,
             borderRadius: 10,
             fontWeight: 800,
             fontSize: 13,
@@ -903,7 +907,7 @@ function PhoneMock({ screen }: { screen: string }) {
   }
   if (screen === "admin") {
     return (
-      <PhoneFrame header="⭐ Admin · Ronnie">
+      <PhoneFrame header="⭐ Admin · Enrique">
         <div style={{ fontSize: 11, color: "#9ca3af", letterSpacing: 1, textTransform: "uppercase", marginBottom: 10 }}>
           Where the team is going
         </div>
@@ -1001,6 +1005,49 @@ function LogField({ icon, label, value, hint, buttons }: { icon: string; label: 
               borderRadius: 6,
               padding: "5px 0",
               textAlign: "center",
+              fontSize: 11,
+              fontWeight: 700,
+              color: "#d1d5db",
+            }}
+          >
+            {b}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function LogRowCompact({ icon, label, value, buttons }: { icon: string; label: string; value: string; buttons: string[] }) {
+  return (
+    <div
+      style={{
+        background: "#1a201b",
+        border: "1px solid #2d3530",
+        borderRadius: 10,
+        padding: "7px 10px",
+        marginBottom: 6,
+        display: "grid",
+        gridTemplateColumns: "1fr auto",
+        gap: 8,
+        alignItems: "center",
+      }}
+    >
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 9, color: "#9ca3af", letterSpacing: 1, textTransform: "uppercase", marginBottom: 2 }}>
+          {icon} {label}
+        </div>
+        <div style={{ fontSize: 20, fontWeight: 900, color: "#d4ff3f", lineHeight: 1 }}>{value}</div>
+      </div>
+      <div style={{ display: "flex", gap: 4 }}>
+        {buttons.map((b) => (
+          <div
+            key={b}
+            style={{
+              background: "#232a25",
+              border: "1px solid #2d3530",
+              borderRadius: 6,
+              padding: "6px 9px",
               fontSize: 11,
               fontWeight: 700,
               color: "#d1d5db",
