@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useState, type FormEvent } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 type Status = "idle" | "sending" | "sent" | "error";
@@ -28,12 +28,18 @@ function SignupShell() {
 }
 
 function SignupForm() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
+  // Set if the user already has a Supabase session — typically a returning
+  // user who signed in via /signin but has no owners row yet (Michelle's
+  // loop). When present we skip the magic-link round trip and just patch
+  // their user_metadata in place.
+  const [signedInEmail, setSignedInEmail] = useState<string | null>(null);
 
   // Pre-fill leader code from ?code=XXXX so a leader can share
   // https://championstracker.org/signup?code=RONNIE2026 with a new owner.
@@ -41,6 +47,18 @@ function SignupForm() {
     const fromUrl = searchParams.get("code");
     if (fromUrl) setCode(fromUrl.toUpperCase());
   }, [searchParams]);
+
+  // Detect existing session so we can self-heal Michelle-style loops.
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      const user = data.session?.user;
+      if (!user?.email) return;
+      setSignedInEmail(user.email);
+      setEmail(user.email);
+      const meta = (user.user_metadata ?? {}) as { name?: string };
+      if (meta.name) setName(meta.name);
+    });
+  }, []);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -79,8 +97,28 @@ function SignupForm() {
       return;
     }
 
-    // Send magic link. Name + leader_code travel in user_metadata so the
-    // home page can create the owners row on first sign-in.
+    // Self-heal path: user is already authenticated but landed here because
+    // their owners row is missing (e.g. they signed in via /signin without
+    // ever using an invite link). Patch user_metadata in place and bounce
+    // home — getOrCreateOwner() will create the owners row from the
+    // freshened metadata. No second magic-link round trip.
+    if (signedInEmail) {
+      const { error: updateErr } = await supabase.auth.updateUser({
+        data: cleanName
+          ? { name: cleanName, leader_code: cleanCode }
+          : { leader_code: cleanCode },
+      });
+      if (updateErr) {
+        setError(updateErr.message);
+        setStatus("error");
+        return;
+      }
+      router.replace("/");
+      return;
+    }
+
+    // New user: send magic link. Name + leader_code travel in user_metadata
+    // so the home page can create the owners row on first sign-in.
     const { error: otpErr } = await supabase.auth.signInWithOtp({
       email: cleanEmail,
       options: {
@@ -146,11 +184,12 @@ function SignupForm() {
                   marginBottom: 6,
                 }}
               >
-                Welcome, Champion.
+                {signedInEmail ? "Finish your signup." : "Welcome, Champion."}
               </div>
               <div style={{ color: "var(--text-dim)", fontSize: 14 }}>
-                Sign in or start your accountability streak. We&apos;ll email
-                you a one-tap link — no password.
+                {signedInEmail
+                  ? `You're signed in as ${signedInEmail}. Add your name and leader code to finish — no second email needed.`
+                  : "Sign in or start your accountability streak. We'll email you a one-tap link — no password."}
               </div>
             </div>
 
@@ -176,6 +215,12 @@ function SignupForm() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  readOnly={Boolean(signedInEmail)}
+                  style={
+                    signedInEmail
+                      ? { opacity: 0.7, cursor: "not-allowed" }
+                      : undefined
+                  }
                 />
               </div>
 
@@ -215,26 +260,34 @@ function SignupForm() {
                 className="btn-primary"
                 disabled={status === "sending"}
               >
-                {status === "sending" ? "SENDING…" : "SEND MAGIC LINK"}
+                {status === "sending"
+                  ? signedInEmail
+                    ? "FINISHING…"
+                    : "SENDING…"
+                  : signedInEmail
+                    ? "FINISH SIGNUP"
+                    : "SEND MAGIC LINK"}
               </button>
             </form>
 
-            <div
-              style={{
-                marginTop: 18,
-                fontSize: 13,
-                color: "var(--text-mute)",
-                textAlign: "center",
-              }}
-            >
-              Already have an account?{" "}
-              <a
-                href="/signin"
-                style={{ color: "var(--accent)", textDecoration: "underline" }}
+            {!signedInEmail && (
+              <div
+                style={{
+                  marginTop: 18,
+                  fontSize: 13,
+                  color: "var(--text-mute)",
+                  textAlign: "center",
+                }}
               >
-                Sign in
-              </a>
-            </div>
+                Already have an account?{" "}
+                <a
+                  href="/signin"
+                  style={{ color: "var(--accent)", textDecoration: "underline" }}
+                >
+                  Sign in
+                </a>
+              </div>
+            )}
 
             <div className="tagline" style={{ marginTop: 18 }}>
               Discipline today. Freedom tomorrow.
