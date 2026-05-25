@@ -64,11 +64,13 @@ create table if not exists weekly_wrapups (
 );
 
 -- =====================================================================
--- Seed: starter leader codes (Ronnie + a placeholder admin row)
--- Adjust these once we know all 5 leader names.
+-- Seed: the two real admin/leader codes. Every other leader is added
+-- one-at-a-time via SQL as they onboard (NOT seeded here) so the table
+-- only ever contains codes that map to a real person.
 -- =====================================================================
 insert into leader_codes (code, leader_name) values
-  ('RONNIE2026', 'Ronnie Craig')
+  ('RONNIE2026',  'Ronnie Craig'),
+  ('ENRIQUE2026', 'Enrique Carrillo')
 on conflict (code) do nothing;
 
 -- =====================================================================

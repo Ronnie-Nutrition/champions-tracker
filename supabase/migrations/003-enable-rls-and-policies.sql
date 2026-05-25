@@ -170,14 +170,12 @@ create policy "weekly_wrapups_own_delete"
   on weekly_wrapups for delete
   using (owner_id = public.current_owner_id());
 
--- 8) Seed a few more leader codes so we have something to test signup
---    against. Adjust names once the real five leaders are confirmed.
-insert into leader_codes (code, leader_name) values
-  ('MARIA2026', 'Maria Lopez'),
-  ('JOHN2026',  'John Doe'),
-  ('SARA2026',  'Sara Martinez'),
-  ('MIKE2026',  'Mike Johnson')
-on conflict (code) do nothing;
+-- 8) Removed 2026-05-24: this migration originally seeded four placeholder
+--    leader codes (MARIA2026, JOHN2026, SARA2026, MIKE2026) for dev testing.
+--    They were deleted from prod before launch so they couldn't be used to
+--    impersonate a non-existent leader. Real leader codes are now added
+--    one-at-a-time via SQL as each leader onboards. See schema.sql for
+--    the only seeds carried into fresh databases (RONNIE2026, ENRIQUE2026).
 
 -- =====================================================================
 -- Post-migration manual step (do once Ronnie + Enrique have each
