@@ -4,6 +4,8 @@ export type Owner = {
   id: string;
   name: string;
   leader_code: string | null;
+  is_admin: boolean;
+  is_leader: boolean;
 };
 
 export type OwnerLookup =
@@ -24,7 +26,7 @@ export async function getOrCreateOwner(): Promise<OwnerLookup> {
 
   const { data: existing, error: readErr } = await supabase
     .from("owners")
-    .select("id, name, leader_code")
+    .select("id, name, leader_code, is_admin, is_leader")
     .eq("auth_user_id", user.id)
     .maybeSingle();
 
@@ -51,7 +53,7 @@ export async function getOrCreateOwner(): Promise<OwnerLookup> {
       email: user.email,
       leader_code,
     })
-    .select("id, name, leader_code")
+    .select("id, name, leader_code, is_admin, is_leader")
     .single();
 
   if (insertErr) return { kind: "error", message: insertErr.message };

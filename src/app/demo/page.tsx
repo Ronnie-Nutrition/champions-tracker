@@ -176,7 +176,7 @@ const SLIDES: Slide[] = [
       <>
         <p style={p}>Tap the bump buttons or type the exact amount. Done.</p>
         <ul style={listStyle}>
-          <li>Consumptions made</li>
+          <li>Customers</li>
           <li>Consumption sales ($)</li>
           <li>Retail sales ($)</li>
           <li>New customers</li>
@@ -228,7 +228,7 @@ const SLIDES: Slide[] = [
     headline: "Group leaderboard — friendly pressure.",
     body: (
       <>
-        <p style={p}>Your downline ranked live, every week. Drinks, sales, streak.</p>
+        <p style={p}>Your downline ranked live, every week. Customers, sales, streak.</p>
         <p style={{ ...p, color: "#9ca3af", fontSize: 14 }}>
           You don't have to chase anybody. The ranking does the coaching.
         </p>
@@ -724,7 +724,7 @@ function PhoneMock({ screen }: { screen: string }) {
           <div style={{ fontSize: 52, fontWeight: 900, color: "#d4ff3f", lineHeight: 1 }}>{streakNum}</div>
           <div style={{ fontSize: 10, color: "#9ca3af", letterSpacing: 2, textTransform: "uppercase" }}>Day Streak</div>
         </div>
-        <MiniProg label="Consumptions" val="87 / 100" pct={87} />
+        <MiniProg label="Customers" val="87 / 100" pct={87} />
         <MiniProg label="Consumption Sales" val="$820 / $1,000" pct={82} />
         <MiniProg label="Retail Sales" val="$245" pct={0} hideBar />
         <MiniProg label="Social Posts" val="3 / 3" pct={100} green />
@@ -751,7 +751,7 @@ function PhoneMock({ screen }: { screen: string }) {
         <div style={{ fontSize: 11, color: "#9ca3af", letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>
           Today · ready to log
         </div>
-        <MiniProg label="Consumptions" val="0 / 100" pct={0} />
+        <MiniProg label="Customers" val="0 / 100" pct={0} />
         <MiniProg label="Consumption Sales" val="$0 / $1,000" pct={0} />
         <MiniProg label="Retail Sales" val="$0" pct={0} hideBar />
         <MiniProg label="Social Posts" val="0 / 3" pct={0} green />
@@ -807,7 +807,7 @@ function PhoneMock({ screen }: { screen: string }) {
         <div style={{ fontSize: 11, color: "#9ca3af", letterSpacing: 1, textTransform: "uppercase", marginBottom: 10 }}>
           Logging · Thursday
         </div>
-        <LogField icon="🥤" label="Consumptions" value="87" hint="Goal: 100" buttons={["−1", "+1", "+5", "+10"]} />
+        <LogField icon="🥤" label="Customers" value="87" hint="Goal: 100" buttons={["−1", "+1", "+5", "+10"]} />
         <LogField icon="💵" label="Consumption Sales" value="$820" hint="Goal: $1,000" buttons={["+$1", "+$5", "+$10", "+$25"]} />
         <LogField icon="📦" label="Retail Sales" value="$245" hint="Containers" buttons={["+$5", "+$25", "+$100"]} />
         <LogRowCompact icon="🙋" label="New Customers" value="4" buttons={["−1", "+1"]} />
@@ -840,7 +840,7 @@ function PhoneMock({ screen }: { screen: string }) {
           Auto-filled from your dailies
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 12 }}>
-          <AutoMini label="Consumptions" val="487" />
+          <AutoMini label="Customers" val="487" />
           <AutoMini label="Cons. Sales" val="$4.8k" />
           <AutoMini label="Retail" val="$1.2k" />
           <AutoMini label="New Cust." val="14" />
@@ -911,7 +911,7 @@ function PhoneMock({ screen }: { screen: string }) {
         <div style={{ fontSize: 11, color: "#9ca3af", letterSpacing: 1, textTransform: "uppercase", marginBottom: 10 }}>
           Where the team is going
         </div>
-        <PulseMini label="Consumptions" val="4,287" delta="↑ 12%" />
+        <PulseMini label="Customers" val="4,287" delta="↑ 12%" />
         <PulseMini label="Sales" val="$38,920" delta="↑ 8%" />
         <PulseMini label="Avg Streak" val="12.4d" delta="↑ 1.8d" />
         <PulseMini label="Logging Daily" val="9 / 12" delta="↓ 1" down />

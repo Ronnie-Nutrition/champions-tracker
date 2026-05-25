@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 import { getOrCreateOwner, signOut, type Owner } from "@/lib/owner";
 import {
   loggingLabel,
+  mondayOfWeek,
   todayLabel,
   todayLocalISO,
   weekLabel,
@@ -20,6 +21,20 @@ import {
 } from "@/lib/aggregate";
 
 type PageKey = "home" | "log" | "week" | "group" | "admin";
+type GroupRow = {
+  owner_id: string;
+  name: string;
+  drinks: number;
+  sales: number;
+  newCustomers: number;
+  streak: number;
+  isMe: boolean;
+};
+type LeaderRollup = {
+  code: string;
+  ownerCount: number;
+  drinks: number;
+};
 type DailyField =
   | "cons"
   | "consSales"
@@ -45,7 +60,7 @@ const ZERO_DAILY: Record<DailyField, number> = {
 };
 
 const FIELD_LABELS: Record<DailyField, string> = {
-  cons: "Total consumptions",
+  cons: "Total customers",
   consSales: "Total consumption sales ($)",
   retail: "Total retail sales ($)",
   newcust: "New customers today",
@@ -67,6 +82,24 @@ export default function HomePage() {
   const [owner, setOwner] = useState<Owner | null>(null);
   const [streak, setStreak] = useState<number>(0);
   const [weekSums, setWeekSums] = useState<WeekSums>(EMPTY_WEEK);
+  const [groupRows, setGroupRows] = useState<GroupRow[]>([]);
+  const [groupPulse, setGroupPulse] = useState({
+    consumptions: 0,
+    sales: 0,
+    newCustomers: 0,
+    activeOwners: 0,
+    totalOwners: 0,
+  });
+  const [adminPulse, setAdminPulse] = useState({
+    consumptions: 0,
+    sales: 0,
+    newCustomers: 0,
+    avgStreak: 0,
+    activeToday: 0,
+    totalOwners: 0,
+  });
+  const [leaderRollups, setLeaderRollups] = useState<LeaderRollup[]>([]);
+  const [attentionItems, setAttentionItems] = useState<string[]>([]);
   // Set in useEffect to avoid SSR/hydration date mismatch.
   const [labels, setLabels] = useState({
     today: "Today",
@@ -142,9 +175,200 @@ export default function HomePage() {
         setStreak(computeStreak(rows));
         setWeekSums(sumThisWeek(rows));
         setLoadState("ready");
+
+        loadGroup(me).catch(() => {
+          // leaderboard is non-critical — silent fail keeps Home usable
+        });
+        loadAdminViews(me).catch(() => {
+          // admin views are non-critical too — silent fail
+        });
       } finally {
         loadInFlight = false;
       }
+    }
+
+    async function loadGroup(me: Owner) {
+      if (!me.leader_code) return;
+
+      const { data: ownerList, error: ownerErr } = await supabase
+        .from("owners")
+        .select("id, name")
+        .eq("leader_code", me.leader_code);
+      if (cancelled || ownerErr || !ownerList?.length) return;
+
+      const ownerIds = ownerList.map((o) => o.id);
+
+      const sinceDate = new Date();
+      sinceDate.setDate(sinceDate.getDate() - 35);
+      const { data: logs, error: logErr } = await supabase
+        .from("daily_logs")
+        .select(
+          "owner_id, log_date, consumptions, consumption_sales, retail_sales, new_customers, deliveries, social_posts"
+        )
+        .in("owner_id", ownerIds)
+        .gte("log_date", todayLocalISO(sinceDate))
+        .lte("log_date", todayLocalISO());
+      if (cancelled || logErr) return;
+
+      const logsByOwner = new Map<string, DailyLogRow[]>();
+      for (const log of logs ?? []) {
+        const arr = logsByOwner.get(log.owner_id) ?? [];
+        arr.push(log as DailyLogRow);
+        logsByOwner.set(log.owner_id, arr);
+      }
+
+      const weekStartISO = todayLocalISO(mondayOfWeek());
+      const todayISO = todayLocalISO();
+
+      const groupedRows: GroupRow[] = ownerList.map((o) => {
+        const ownerLogs = logsByOwner.get(o.id) ?? [];
+        const wk = sumThisWeek(ownerLogs);
+        return {
+          owner_id: o.id,
+          name: o.id === me.id ? "You" : o.name,
+          drinks: wk.consumptions,
+          sales: wk.consumption_sales + wk.retail_sales,
+          newCustomers: wk.new_customers,
+          streak: computeStreak(ownerLogs),
+          isMe: o.id === me.id,
+        };
+      });
+
+      groupedRows.sort(
+        (a, b) => b.drinks - a.drinks || b.sales - a.sales
+      );
+      setGroupRows(groupedRows);
+
+      const activeOwners = ownerList.filter((o) => {
+        const ownerLogs = logsByOwner.get(o.id) ?? [];
+        return ownerLogs.some(
+          (l) => l.log_date >= weekStartISO && l.log_date <= todayISO
+        );
+      }).length;
+
+      setGroupPulse({
+        consumptions: groupedRows.reduce((s, r) => s + r.drinks, 0),
+        sales: groupedRows.reduce((s, r) => s + r.sales, 0),
+        newCustomers: groupedRows.reduce((s, r) => s + r.newCustomers, 0),
+        activeOwners,
+        totalOwners: ownerList.length,
+      });
+    }
+
+    async function loadAdminViews(me: Owner) {
+      if (!me.is_admin) return;
+
+      const { data: allOwners, error: ownerErr } = await supabase
+        .from("owners")
+        .select("id, name, leader_code");
+      if (cancelled || ownerErr || !allOwners?.length) return;
+
+      const allOwnerIds = allOwners.map((o) => o.id);
+
+      const sinceDate = new Date();
+      sinceDate.setDate(sinceDate.getDate() - 35);
+      const { data: logs, error: logErr } = await supabase
+        .from("daily_logs")
+        .select(
+          "owner_id, log_date, consumptions, consumption_sales, retail_sales, new_customers, deliveries, social_posts"
+        )
+        .in("owner_id", allOwnerIds)
+        .gte("log_date", todayLocalISO(sinceDate))
+        .lte("log_date", todayLocalISO());
+      if (cancelled || logErr) return;
+
+      const weekStartISO = todayLocalISO(mondayOfWeek());
+      const { data: wrapups } = await supabase
+        .from("weekly_wrapups")
+        .select("owner_id")
+        .eq("week_start", weekStartISO);
+      if (cancelled) return;
+
+      const logsByOwner = new Map<string, DailyLogRow[]>();
+      for (const log of logs ?? []) {
+        const arr = logsByOwner.get(log.owner_id) ?? [];
+        arr.push(log as DailyLogRow);
+        logsByOwner.set(log.owner_id, arr);
+      }
+
+      const todayISO = todayLocalISO();
+      let totalConsumptions = 0;
+      let totalSales = 0;
+      let totalNewCustomers = 0;
+      let totalStreak = 0;
+      let activeToday = 0;
+
+      for (const o of allOwners) {
+        const ownerLogs = logsByOwner.get(o.id) ?? [];
+        const wk = sumThisWeek(ownerLogs);
+        totalConsumptions += wk.consumptions;
+        totalSales += wk.consumption_sales + wk.retail_sales;
+        totalNewCustomers += wk.new_customers;
+        totalStreak += computeStreak(ownerLogs);
+        if (ownerLogs.some((l) => l.log_date === todayISO)) activeToday++;
+      }
+
+      setAdminPulse({
+        consumptions: totalConsumptions,
+        sales: totalSales,
+        newCustomers: totalNewCustomers,
+        avgStreak:
+          allOwners.length > 0
+            ? Math.round((totalStreak / allOwners.length) * 10) / 10
+            : 0,
+        activeToday,
+        totalOwners: allOwners.length,
+      });
+
+      // By Leader Code rollup
+      const byCode = new Map<
+        string,
+        { code: string; ownerCount: number; drinks: number }
+      >();
+      for (const o of allOwners) {
+        if (!o.leader_code) continue;
+        const ownerLogs = logsByOwner.get(o.id) ?? [];
+        const wk = sumThisWeek(ownerLogs);
+        const cur = byCode.get(o.leader_code) ?? {
+          code: o.leader_code,
+          ownerCount: 0,
+          drinks: 0,
+        };
+        cur.ownerCount += 1;
+        cur.drinks += wk.consumptions;
+        byCode.set(o.leader_code, cur);
+      }
+      setLeaderRollups(
+        Array.from(byCode.values()).sort((a, b) => b.drinks - a.drinks)
+      );
+
+      // Needs Attention — broke-streak owners + missing wrap-ups
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      const sevenDaysAgoISO = todayLocalISO(sevenDaysAgo);
+
+      const items: string[] = [];
+      for (const o of allOwners) {
+        const ownerLogs = logsByOwner.get(o.id) ?? [];
+        const streak = computeStreak(ownerLogs);
+        const loggedInLast7 = ownerLogs.some(
+          (l) => l.log_date >= sevenDaysAgoISO
+        );
+        if (streak === 0 && loggedInLast7) {
+          items.push(`${o.name} — broke streak`);
+        }
+      }
+
+      const submittedIds = new Set((wrapups ?? []).map((w) => w.owner_id));
+      const missingCount = allOwners.filter(
+        (o) => !submittedIds.has(o.id)
+      ).length;
+      if (missingCount > 0) {
+        items.push(
+          `${missingCount} owner${missingCount === 1 ? "" : "s"} haven't submitted this week's wrap-up`
+        );
+      }
+      setAttentionItems(items.slice(0, 5));
     }
 
     // onAuthStateChange fires INITIAL_SESSION immediately after subscribe
@@ -174,7 +398,7 @@ export default function HomePage() {
   }, [router]);
 
   const headerMeta = owner
-    ? `${page === "admin" ? "Admin" : "Owner"} • ${owner.name}`
+    ? `${page === "admin" ? "Admin" : "Enrique Carrillo"} • ${owner.name}`
     : "…";
 
   async function handleSignOut() {
@@ -262,7 +486,43 @@ export default function HomePage() {
     window.setTimeout(() => go("home"), 600);
   }
 
-  function submitWeek() {
+  async function submitWeek(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!owner) return;
+
+    const fd = new FormData(e.currentTarget);
+    const num = (k: string) => {
+      const v = fd.get(k);
+      return v == null || v === "" ? null : Number(v);
+    };
+    const text = (k: string) => {
+      const v = fd.get(k);
+      return typeof v === "string" && v.trim() ? v.trim() : null;
+    };
+
+    const row = {
+      owner_id: owner.id,
+      week_start: todayLocalISO(mondayOfWeek()),
+      popups: num("popups") ?? 0,
+      events: num("events") ?? 0,
+      customer_appreciation_day: customerAppreciation === "yes",
+      biggest_win: text("biggest_win"),
+      biggest_lesson: text("biggest_lesson"),
+      consumptions_goal: num("consumptions_goal"),
+      consumption_sales_goal: num("consumption_sales_goal"),
+      retail_sales_goal: num("retail_sales_goal"),
+      new_customers_goal: num("new_customers_goal"),
+    };
+
+    const { error } = await supabase
+      .from("weekly_wrapups")
+      .upsert(row, { onConflict: "owner_id,week_start" });
+
+    if (error) {
+      showToast(`❌ Save failed: ${error.message}`);
+      return;
+    }
+
     showToast("🏆 Week locked in. See you Monday.");
     fireConfetti();
     window.setTimeout(() => go("home"), 1400);
@@ -368,7 +628,7 @@ export default function HomePage() {
         <div className="card">
           <div className="prog-row">
             <div className="prog-head">
-              <span className="prog-label">Consumptions</span>
+              <span className="prog-label">Customers</span>
               <span className="prog-val">
                 {daily.cons}
                 <span className="target"> / 100</span>
@@ -418,7 +678,7 @@ export default function HomePage() {
         <div className="week-snap">
           <div>
             <div className="num">{weekSums.consumptions}</div>
-            <div className="lbl">Drinks</div>
+            <div className="lbl">Customers</div>
           </div>
           <div>
             <div className="num">
@@ -438,6 +698,11 @@ export default function HomePage() {
           </div>
         </div>
 
+        <div className="h-section">Account</div>
+        <button className="btn-secondary" onClick={handleSignOut}>
+          Sign out
+        </button>
+
         <div className="tagline">Discipline today. Freedom tomorrow.</div>
       </div>
 
@@ -447,7 +712,7 @@ export default function HomePage() {
 
         <NumField
           icon="🥤"
-          label="Consumptions"
+          label="Customers"
           value={daily.cons}
           goalHint="Goal: 100"
           editable
@@ -554,7 +819,7 @@ export default function HomePage() {
 
         <div className="h-section">Auto-Filled From Your Dailies</div>
         <div className="auto-grid">
-          <AutoCell label="Consumptions" value={String(weekSums.consumptions)} />
+          <AutoCell label="Customers" value={String(weekSums.consumptions)} />
           <AutoCell
             label="Consumption Sales"
             value={formatMoney(weekSums.consumption_sales)}
@@ -578,66 +843,71 @@ export default function HomePage() {
           />
         </div>
 
-        <div className="h-section">Fill In The Rest</div>
+        <form onSubmit={submitWeek}>
+          <div className="h-section">Fill In The Rest</div>
 
-        <div className="input-row">
-          <label>Pop-ups this week</label>
-          <input type="number" placeholder="0" defaultValue={1} />
-        </div>
-        <div className="input-row">
-          <label>Events held</label>
-          <input type="number" placeholder="0" defaultValue={0} />
-        </div>
-        <div className="input-row">
-          <label>Customer Appreciation Day?</label>
-          <div className="toggle-row">
-            <button
-              className={`toggle-btn ${customerAppreciation === "no" ? "active" : ""}`}
-              onClick={() => setCustomerAppreciation("no")}
-            >
-              No
-            </button>
-            <button
-              className={`toggle-btn ${customerAppreciation === "yes" ? "active" : ""}`}
-              onClick={() => setCustomerAppreciation("yes")}
-            >
-              Yes
-            </button>
+          <div className="input-row">
+            <label>Pop-ups this week</label>
+            <input type="number" name="popups" placeholder="0" defaultValue={1} />
           </div>
-        </div>
-        <div className="input-row">
-          <label>🏆 Biggest win of the week</label>
-          <textarea
-            placeholder="What went right this week?"
-            defaultValue="Hit 100 drinks on Saturday for the first time ever 🔥"
-          />
-        </div>
-        <div className="input-row">
-          <label>💡 Biggest lesson learned</label>
-          <textarea placeholder="What did you learn?" />
-        </div>
+          <div className="input-row">
+            <label>Events held</label>
+            <input type="number" name="events" placeholder="0" defaultValue={0} />
+          </div>
+          <div className="input-row">
+            <label>Customer Appreciation Day?</label>
+            <div className="toggle-row">
+              <button
+                type="button"
+                className={`toggle-btn ${customerAppreciation === "no" ? "active" : ""}`}
+                onClick={() => setCustomerAppreciation("no")}
+              >
+                No
+              </button>
+              <button
+                type="button"
+                className={`toggle-btn ${customerAppreciation === "yes" ? "active" : ""}`}
+                onClick={() => setCustomerAppreciation("yes")}
+              >
+                Yes
+              </button>
+            </div>
+          </div>
+          <div className="input-row">
+            <label>🏆 Biggest win of the week</label>
+            <textarea
+              name="biggest_win"
+              placeholder="What went right this week?"
+              defaultValue="Hit 100 drinks on Saturday for the first time ever 🔥"
+            />
+          </div>
+          <div className="input-row">
+            <label>💡 Biggest lesson learned</label>
+            <textarea name="biggest_lesson" placeholder="What did you learn?" />
+          </div>
 
-        <div className="h-section">🎯 Goals For Next Week</div>
-        <div className="input-row">
-          <label>Consumptions goal</label>
-          <input type="number" placeholder="500" defaultValue={500} />
-        </div>
-        <div className="input-row">
-          <label>Consumption sales goal ($)</label>
-          <input type="number" placeholder="5000" defaultValue={5000} />
-        </div>
-        <div className="input-row">
-          <label>Retail sales goal ($)</label>
-          <input type="number" placeholder="1000" defaultValue={1000} />
-        </div>
-        <div className="input-row">
-          <label>New customers goal</label>
-          <input type="number" placeholder="12" defaultValue={12} />
-        </div>
+          <div className="h-section">🎯 Goals For Next Week</div>
+          <div className="input-row">
+            <label>Customers goal</label>
+            <input type="number" name="consumptions_goal" placeholder="500" defaultValue={500} />
+          </div>
+          <div className="input-row">
+            <label>Consumption sales goal ($)</label>
+            <input type="number" name="consumption_sales_goal" placeholder="5000" defaultValue={5000} />
+          </div>
+          <div className="input-row">
+            <label>Retail sales goal ($)</label>
+            <input type="number" name="retail_sales_goal" placeholder="1000" defaultValue={1000} />
+          </div>
+          <div className="input-row">
+            <label>New customers goal</label>
+            <input type="number" name="new_customers_goal" placeholder="12" defaultValue={12} />
+          </div>
 
-        <button className="btn-primary" onClick={submitWeek}>
-          SUBMIT WEEK
-        </button>
+          <button type="submit" className="btn-primary">
+            SUBMIT WEEK
+          </button>
+        </form>
       </div>
 
       {/* GROUP / LEADERBOARD */}
@@ -648,10 +918,19 @@ export default function HomePage() {
           <div className="h-section" style={{ margin: "0 0 12px" }}>
             Group Pulse
           </div>
-          <PulseRow label="Consumptions" value="4,287" delta="↑ 12% vs last week" />
-          <PulseRow label="Sales" value="$38,920" delta="↑ 8%" />
-          <PulseRow label="New Customers" value="68" delta="↑ 3%" />
-          <PulseRow label="Active Owners (7/7 logged)" value="9 / 12" />
+          <PulseRow
+            label="Customers"
+            value={groupPulse.consumptions.toLocaleString()}
+          />
+          <PulseRow label="Sales" value={formatMoney(groupPulse.sales)} />
+          <PulseRow
+            label="New Customers"
+            value={groupPulse.newCustomers.toString()}
+          />
+          <PulseRow
+            label="Active Owners (logged this week)"
+            value={`${groupPulse.activeOwners} / ${groupPulse.totalOwners}`}
+          />
         </div>
 
         <div className="h-section">Leaderboard — This Week</div>
@@ -667,22 +946,39 @@ export default function HomePage() {
           >
             <div>#</div>
             <div>Owner</div>
-            <div className="stat">Drinks</div>
+            <div className="stat">Customers</div>
             <div className="stat">Sales</div>
             <div className="streak-mini">🔥</div>
           </div>
-          <LBRow rank={1} name="Maria L." code="Maria's Code" drinks="624" sales="$6.2k" streak="28d" />
-          <LBRow rank={2} name="Carlos R." code="Ronnie's Code" drinks="487" sales="$4.8k" streak="21d" />
-          <LBRow rank={3} name="You" code="Ronnie's Code" drinks="412" sales="$3.9k" streak="14d" you />
-          <LBRow rank={4} name="Diana V." code="Maria's Code" drinks="398" sales="$3.6k" streak="12d" />
-          <LBRow rank={5} name="Sam T." code="John's Code" drinks="356" sales="$3.4k" streak="9d" />
-          <LBRow rank={6} name="Patty G." code="Ronnie's Code" drinks="312" sales="$2.9k" streak="7d" />
-          <LBRow rank={7} name="Eddie M." code="John's Code" drinks="298" sales="$2.7k" streak="5d" />
-          <LBRow rank={8} name="Lisa K." code="Sara's Code" drinks="241" sales="$2.2k" streak="3d" />
+          {groupRows.length === 0 ? (
+            <div
+              style={{
+                color: "var(--text-mute)",
+                padding: "16px 12px",
+                textAlign: "center",
+                fontSize: 13,
+              }}
+            >
+              No data yet — log a daily to appear here.
+            </div>
+          ) : (
+            groupRows.map((r, i) => (
+              <LBRow
+                key={r.owner_id}
+                rank={i + 1}
+                name={r.name}
+                drinks={r.drinks.toLocaleString()}
+                sales={formatMoney(r.sales)}
+                streak={`${r.streak}d`}
+                you={r.isMe}
+              />
+            ))
+          )}
         </div>
       </div>
 
-      {/* ADMIN */}
+      {/* ADMIN — gated to is_admin owners only */}
+      {owner.is_admin && (
       <div className={`page ${page === "admin" ? "active" : ""}`}>
         <div className="date-row">⭐ Admin — {labels.week}</div>
 
@@ -690,49 +986,80 @@ export default function HomePage() {
           <div className="h-section" style={{ margin: "0 0 12px" }}>
             Where The Team Is Going
           </div>
-          <PulseRow label="Consumptions" value="4,287" delta="↑ 12%" />
-          <PulseRow label="Sales" value="$38,920" delta="↑ 8%" />
-          <PulseRow label="New Customers" value="68" delta="↑ 3%" />
-          <PulseRow label="Avg Streak" value="12.4d" delta="↑ 1.8d" />
-          <PulseRow label="Owners Logging Daily" value="9 / 12" delta="↓ 1" deltaDown />
+          <PulseRow
+            label="Customers"
+            value={adminPulse.consumptions.toLocaleString()}
+          />
+          <PulseRow label="Sales" value={formatMoney(adminPulse.sales)} />
+          <PulseRow
+            label="New Customers"
+            value={adminPulse.newCustomers.toString()}
+          />
+          <PulseRow label="Avg Streak" value={`${adminPulse.avgStreak}d`} />
+          <PulseRow
+            label="Active Today"
+            value={`${adminPulse.activeToday} / ${adminPulse.totalOwners}`}
+          />
         </div>
 
         <button className="btn-secondary" onClick={() => go("group")}>
           View Full Leaderboard →
         </button>
-        <button className="btn-secondary" onClick={() => showToast("CSV exported (mock)")}>
-          ⬇ Export Week as CSV
-        </button>
 
         <div className="h-section">By Leader Code</div>
         <div className="card">
-          <PulseRow label={<>RONNIE2026 <span style={{ color: "var(--text-mute)" }}>(3 owners)</span></>} value="1,211" />
-          <PulseRow label={<>MARIA2026 <span style={{ color: "var(--text-mute)" }}>(2 owners)</span></>} value="1,022" />
-          <PulseRow label={<>JOHN2026 <span style={{ color: "var(--text-mute)" }}>(3 owners)</span></>} value="954" />
-          <PulseRow label={<>SARA2026 <span style={{ color: "var(--text-mute)" }}>(2 owners)</span></>} value="641" />
-          <PulseRow label={<>MIKE2026 <span style={{ color: "var(--text-mute)" }}>(2 owners)</span></>} value="459" />
+          {leaderRollups.length === 0 ? (
+            <div
+              style={{
+                color: "var(--text-mute)",
+                padding: "12px",
+                fontSize: 13,
+              }}
+            >
+              No data yet.
+            </div>
+          ) : (
+            leaderRollups.map((r) => (
+              <PulseRow
+                key={r.code}
+                label={
+                  <>
+                    {r.code}{" "}
+                    <span style={{ color: "var(--text-mute)" }}>
+                      ({r.ownerCount} {r.ownerCount === 1 ? "owner" : "owners"})
+                    </span>
+                  </>
+                }
+                value={r.drinks.toLocaleString()}
+              />
+            ))
+          )}
         </div>
 
         <div className="h-section">🚨 Needs Attention</div>
         <div className="card">
-          <div className="pulse-row">
-            <div className="pulse-label">Eddie M. — broke streak yesterday</div>
-          </div>
-          <div className="pulse-row">
-            <div className="pulse-label">Lisa K. — 3-day average dropping</div>
-          </div>
-          <div className="pulse-row">
-            <div className="pulse-label">2 owners didn&apos;t submit wrap-up</div>
-          </div>
+          {attentionItems.length === 0 ? (
+            <div
+              style={{
+                padding: "12px",
+                color: "var(--text-mute)",
+                fontSize: 13,
+              }}
+            >
+              🎉 Everyone&apos;s on track this week.
+            </div>
+          ) : (
+            attentionItems.map((line, i) => (
+              <div key={i} className="pulse-row">
+                <div className="pulse-label">{line}</div>
+              </div>
+            ))
+          )}
         </div>
-
-        <div className="h-section">Account</div>
-        <button className="btn-secondary" onClick={handleSignOut}>
-          Sign out
-        </button>
 
         <div className="tagline">2,000+ clubs and beyond.</div>
       </div>
+      )}
 
       {/* Bottom Nav */}
       <div className="navbar">
@@ -740,7 +1067,9 @@ export default function HomePage() {
         <NavButton page="log" current={page} onSelect={go} icon="➕" label="Log" />
         <NavButton page="week" current={page} onSelect={go} icon="🏆" label="Week" />
         <NavButton page="group" current={page} onSelect={go} icon="📊" label="Group" />
-        <NavButton page="admin" current={page} onSelect={go} icon="⭐" label="Admin" />
+        {owner.is_admin && (
+          <NavButton page="admin" current={page} onSelect={go} icon="⭐" label="Admin" />
+        )}
       </div>
 
       {toast && <div className="toast show">{toast}</div>}
@@ -875,7 +1204,7 @@ function LBRow({
 }: {
   rank: number;
   name: string;
-  code: string;
+  code?: string;
   drinks: string;
   sales: string;
   streak: string;
@@ -886,7 +1215,7 @@ function LBRow({
       <div className="rank">{rank}</div>
       <div className="name">
         {name}
-        <span className="sub">{code}</span>
+        {code && <span className="sub">{code}</span>}
       </div>
       <div className="stat">{drinks}</div>
       <div className="stat">{sales}</div>
