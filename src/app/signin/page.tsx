@@ -1,47 +1,23 @@
 "use client";
 
-import { Suspense, useEffect, useState, type FormEvent } from "react";
-import { useSearchParams } from "next/navigation";
+import { useEffect, useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 type Status = "idle" | "sending" | "sent" | "error";
 
-export default function SignupPage() {
-  return (
-    <Suspense fallback={<SignupShell />}>
-      <SignupForm />
-    </Suspense>
-  );
-}
-
-function SignupShell() {
-  return (
-    <div className="phone">
-      <div className="topbar">
-        <div className="logo">
-          THE <span>CHAMPIONS</span>
-        </div>
-        <div className="topbar-meta">Sign in</div>
-      </div>
-      <div className="page active" />
-    </div>
-  );
-}
-
-function SignupForm() {
-  const searchParams = useSearchParams();
-  const [name, setName] = useState("");
+export default function SignInPage() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
-  const [code, setCode] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
 
-  // Pre-fill leader code from ?code=XXXX so a leader can share
-  // https://championstracker.org/signup?code=RONNIE2026 with a new owner.
+  // Already signed in? Skip the form and bounce to the app.
   useEffect(() => {
-    const fromUrl = searchParams.get("code");
-    if (fromUrl) setCode(fromUrl.toUpperCase());
-  }, [searchParams]);
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) router.replace("/");
+    });
+  }, [router]);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -49,44 +25,20 @@ function SignupForm() {
     setStatus("sending");
     setError(null);
 
-    const cleanName = name.trim();
     const cleanEmail = email.trim();
-    const cleanCode = code.trim().toUpperCase();
-
     if (!cleanEmail) {
       setError("Email is required");
       setStatus("error");
       return;
     }
 
-    // Validate leader code exists. leader_codes table is publicly readable
-    // (RLS policy) so this works without a session.
-    const { data: lc, error: lcErr } = await supabase
-      .from("leader_codes")
-      .select("code")
-      .eq("code", cleanCode)
-      .maybeSingle();
-
-    if (lcErr) {
-      setError(`Couldn't check leader code: ${lcErr.message}`);
-      setStatus("error");
-      return;
-    }
-    if (!lc) {
-      setError(
-        `Leader code "${cleanCode}" not found. Ask your leader for the right code.`
-      );
-      setStatus("error");
-      return;
-    }
-
-    // Send magic link. Name + leader_code travel in user_metadata so the
-    // home page can create the owners row on first sign-in.
+    // No leader_code in metadata — this is for returning users only.
+    // First-time signups land in getOrCreateOwner() with "incomplete-signup"
+    // and get bounced to /signup to provide their leader code.
     const { error: otpErr } = await supabase.auth.signInWithOtp({
       email: cleanEmail,
       options: {
         emailRedirectTo: `${window.location.origin}/`,
-        data: cleanName ? { name: cleanName, leader_code: cleanCode } : { leader_code: cleanCode },
       },
     });
 
@@ -148,26 +100,14 @@ function SignupForm() {
                   marginBottom: 6,
                 }}
               >
-                Welcome, Champion.
+                Welcome back, Champion.
               </div>
               <div style={{ color: "var(--text-dim)", fontSize: 14 }}>
-                Sign in or start your accountability streak. We&apos;ll email
-                you a one-tap link — no password.
+                We&apos;ll email you a one-tap sign-in link — no password.
               </div>
             </div>
 
             <form onSubmit={submit}>
-              <div className="input-row">
-                <label>Your name</label>
-                <input
-                  type="text"
-                  placeholder="Maria Lopez"
-                  autoComplete="name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                />
-              </div>
-
               <div className="input-row">
                 <label>Email</label>
                 <input
@@ -178,21 +118,6 @@ function SignupForm() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                />
-              </div>
-
-              <div className="input-row">
-                <label>Leader code</label>
-                <input
-                  type="text"
-                  placeholder="RONNIE2026"
-                  autoCapitalize="characters"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  required
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                  style={{ letterSpacing: 1.5, textTransform: "uppercase" }}
                 />
               </div>
 
@@ -217,7 +142,7 @@ function SignupForm() {
                 className="btn-primary"
                 disabled={status === "sending"}
               >
-                {status === "sending" ? "SENDING…" : "SEND MAGIC LINK"}
+                {status === "sending" ? "SENDING…" : "SEND SIGN-IN LINK"}
               </button>
             </form>
 
@@ -227,15 +152,10 @@ function SignupForm() {
                 fontSize: 13,
                 color: "var(--text-mute)",
                 textAlign: "center",
+                lineHeight: 1.5,
               }}
             >
-              Already have an account?{" "}
-              <a
-                href="/signin"
-                style={{ color: "var(--accent)", textDecoration: "underline" }}
-              >
-                Sign in
-              </a>
+              First time here? Use the invite link from your leader to create an account.
             </div>
 
             <div className="tagline" style={{ marginTop: 18 }}>

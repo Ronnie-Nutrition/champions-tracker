@@ -124,10 +124,15 @@ export default function HomePage() {
       try {
         const lookup = await getOrCreateOwner();
         if (cancelled) return;
-        if (
-          lookup.kind === "no-session" ||
-          lookup.kind === "incomplete-signup"
-        ) {
+        if (lookup.kind === "no-session") {
+          router.replace("/signin");
+          return;
+        }
+        if (lookup.kind === "incomplete-signup") {
+          // Signed in but no owners row + no leader_code in metadata —
+          // typically happens when a brand-new user landed on /signin
+          // instead of using their leader's invite link. Send them to
+          // /signup so they can enter their leader code.
           router.replace("/signup");
           return;
         }
@@ -380,12 +385,12 @@ export default function HomePage() {
     const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
       if (cancelled) return;
       if (event === "SIGNED_OUT") {
-        router.replace("/signup");
+        router.replace("/signin");
         return;
       }
       if (!session) {
-        // No session yet (INITIAL_SESSION with null). Bounce to signup.
-        router.replace("/signup");
+        // No session yet (INITIAL_SESSION with null). Bounce to signin.
+        router.replace("/signin");
         return;
       }
       // We have a session — load owner + today's row.
@@ -404,7 +409,7 @@ export default function HomePage() {
 
   async function handleSignOut() {
     await signOut();
-    router.replace("/signup");
+    router.replace("/signin");
   }
 
   function go(p: PageKey) {
@@ -593,7 +598,7 @@ export default function HomePage() {
               </div>
               <button
                 className="btn-secondary"
-                onClick={() => router.replace("/signup")}
+                onClick={() => router.replace("/signin")}
               >
                 Go to sign in
               </button>
