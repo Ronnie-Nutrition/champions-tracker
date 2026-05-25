@@ -2,13 +2,13 @@
 
 **Date:** 2026-05-25 (Day 2 of production — continuing the May 24 deploy momentum)
 **Owner:** Ronnie Craig
-**Status:** Production is healthy. App is live, two real admins, two real leaders signed up, three more invited.
+**Status:** Production is healthy. App is live with 2 admins, 3 active leaders, 1 active owner, 2 leaders still pending signup. PWA-installable on iOS / Android with branded home-screen icon.
 
 ---
 
 ## 🎯 What happened this session
 
-Shipped two UX improvements that were carry-overs from Session 5, plus added the www redirect, plus onboarded the first wave of real leaders.
+Shipped four UX/infra improvements + onboarded the first real wave of leaders + handled the first real "support ticket" (Michelle's broken sign-in loop).
 
 | Task | State |
 |------|-------|
@@ -16,11 +16,13 @@ Shipped two UX improvements that were carry-overs from Session 5, plus added the
 | **Gap 3 — Dedicated /signin route** (surfaced this session) | ✅ DONE — email-only sign-in for returning users; /signup stays for new users with `?code=XXXX` |
 | **www.championstracker.org redirect** | ✅ DONE — 308 permanent redirect to apex, SSL provisioned via Vercel |
 | Topbar UI cleanup ("Sign in" label removed from /signin + /signup) | ✅ DONE — was looking clickable but was just a plain div |
+| **PWA polish** — proper Add-to-Home-Screen icon | ✅ DONE — lime flame on dark bg, 192/512/apple-180 PNGs + master SVG, reproducible build script |
 | **Onboarded Enrique as admin** | ✅ DONE — signed up with thespotnutrition@gmail.com, `is_admin=true, is_leader=true, leader_code=ENRIQUE2026` |
-| **Created leader codes for Jon, Bernadette, Martin** | ✅ DONE — JON2026, BERNADETTE2026, MARTIN2026 inserted |
-| **Onboarded Martin Banda as leader** | ✅ DONE — signed up with martinbanda1994@gmail.com, `is_leader=true, leader_code=MARTIN2026` |
-| **Onboarded Jon Hood as leader** | ✅ DONE — signed up with jonhoodfit@gmail.com, `is_leader=true, leader_code=JON2026` |
-| **Created leader code for Yvette Gomez** | ✅ DONE — YVETTE2026 inserted |
+| **Created leader codes for Jon, Bernadette, Martin, Yvette, Lisa** | ✅ DONE — JON2026, BERNADETTE2026, MARTIN2026, YVETTE2026, LISA2026 inserted |
+| **Onboarded Martin Banda as leader** | ✅ DONE — martinbanda1994@gmail.com, `is_leader=true, leader_code=MARTIN2026` |
+| **Onboarded Jon Hood as leader** | ✅ DONE — jonhoodfit@gmail.com, `is_leader=true, leader_code=JON2026` |
+| **Onboarded Lisa Cassity as leader** | ✅ DONE — lisacassity@yahoo.com, `is_leader=true, leader_code=LISA2026` |
+| **Fixed Michelle Fairman's broken sign-in loop** | ✅ DONE — see "Support tickets" section below |
 
 ---
 
@@ -33,6 +35,10 @@ Shipped two UX improvements that were carry-overs from Session 5, plus added the
 ### Leaders (see their own team in Group tab)
 - **Martin Banda** — martinbanda1994@gmail.com — `leader_code=MARTIN2026`
 - **Jon Hood** — jonhoodfit@gmail.com — `leader_code=JON2026`
+- **Lisa Cassity** — lisacassity@yahoo.com — `leader_code=LISA2026`
+
+### Regular owners (signed up, logging activity under a leader)
+- **Michelle Fairman** — standoutnutrition860@gmail.com — `leader_code=ENRIQUE2026` (under Enrique's group)
 
 ### Invited but not yet signed up (`leader_codes` row exists, no `owners` row)
 - **Bernadette Carrillo** — leader code `BERNADETTE2026` — invite text not yet sent (or sent and pending)
@@ -43,7 +49,7 @@ Shipped two UX improvements that were carry-overs from Session 5, plus added the
 
 ---
 
-## 💻 Code changes shipped (5 commits this session)
+## 💻 Code changes shipped (6 commits this session)
 
 ### `0709787` — Add 'Your Team Invite Link' card to Group tab for leaders (Gap 2)
 **Files:** `src/app/page.tsx`
@@ -65,7 +71,39 @@ Shipped two UX improvements that were carry-overs from Session 5, plus added the
 **Files:** `src/app/signin/page.tsx`, `src/app/signup/page.tsx`
 - Dropped the topbar-meta "Sign in" `<div>` that looked clickable. The form headline already makes page purpose clear. Main app's topbar-meta (which carries "Enrique Carrillo • Ronnie Craig") is unchanged.
 
+### `242d948` — PWA polish: real app icon for Add to Home Screen
+**Files:** `src/app/icon.svg` (NEW), `src/app/apple-icon.png` (NEW), `public/icon-192.png` (NEW), `public/icon-512.png` (NEW), `scripts/gen-icons.mjs` (NEW), `public/manifest.json`, `src/app/layout.tsx`; deleted leftover create-next-app SVGs (`file/globe/next/vercel/window.svg`).
+- Master SVG (`src/app/icon.svg`) is a lime flame (`#d4ff3f` outer, `#a4c92e` inner) on dark `#0f1410` background. Next.js auto-serves it as `/icon.svg` for the favicon.
+- `src/app/apple-icon.png` (180x180) auto-served as `/apple-icon.png`, picked up by iOS as the home-screen icon.
+- `public/icon-192.png` + `icon-512.png` referenced from the existing manifest.json (which previously 404'd those URLs since Session 1).
+- `scripts/gen-icons.mjs` is a reproducible sharp-based SVG→PNG pipeline. Re-run with `node scripts/gen-icons.mjs` from project root if the design ever changes.
+- Also fixed stale "consumptions" → "customers" in manifest.json + layout.tsx descriptions to match Session 4's terminology rename.
+
 (Sessions 4 + 5 commits — environment + first deploy + handoff docs — remain on `main` from yesterday.)
+
+---
+
+## 🆘 Support tickets handled this session
+
+### Michelle Fairman — infinite magic-link loop
+
+**Symptom (per Ronnie):** "She can't log into it at all, keeps sending her email and loops."
+
+**Root cause:** Michelle had signed in via `/signin` (email-only flow) which authenticated her in `auth.users` but didn't create an `owners` row (since `/signin` doesn't capture a `leader_code` in `user_metadata`). The home page then bounced her to `/signup`, where she likely kept clicking older magic-link emails instead of submitting the form fresh — keeping her in a stale-metadata state.
+
+**Fix:** Manually inserted her `owners` row via SQL Editor, linking to her existing `auth.users` id, under Enrique's leader code:
+
+```sql
+insert into owners (auth_user_id, name, email, leader_code)
+select id, 'Michelle Fairman', 'standoutnutrition860@gmail.com', 'ENRIQUE2026'
+from auth.users
+where email = 'standoutnutrition860@gmail.com'
+returning name, email, leader_code, is_admin, is_leader;
+```
+
+Result confirmed: `Michelle Fairman | standoutnutrition860@gmail.com | ENRIQUE2026 | false | false`.
+
+**Why this is the right fix going forward:** The `/signin` route is correct (returning users shouldn't need a leader_code). The bug is in how a *new* user who lands on `/signin` instead of an invite link gets recovered. The fallback already exists (`incomplete-signup` → `/signup`) but is brittle if they keep clicking stale magic links. **Session 7 candidate:** make `/signup` write the freshest leader_code into `user_metadata` AND re-run the `owners` upsert immediately, so a returning-incomplete user can self-recover by submitting `/signup` once. For now, manual SQL fix is the workaround.
 
 ---
 
@@ -98,9 +136,10 @@ Shipped two UX improvements that were carry-overs from Session 5, plus added the
    where email = '<their email>'
    returning name, email, is_leader, leader_code;
    ```
-2. **End-to-end verification of /signin route on prod.** Ronnie tested the page rendering but not the full magic-link round trip. Need to confirm: open https://championstracker.org/signin in incognito → email → magic link → land on Home (NOT bounced back to /signup). This is the main reason Gap 3 was built.
+2. **End-to-end verification of /signin route on prod.** Ronnie tested the page rendering but not the full magic-link round trip. Need to confirm: open https://championstracker.org/signin in incognito → email → magic link → land on Home (NOT bounced back to /signup).
 3. **Ysela shared-login activation.** Ronnie chose Option 1 (Ysela uses `azteampossibility@gmail.com`). Walk her through it on her phone:
    - Open https://championstracker.org → /signin → type the shared email → magic link → tap link in Gmail → signed in → Safari Share → Add to Home Screen.
+4. **Self-heal /signup flow for users in Michelle's situation.** If a user signs in via /signin but has no owners row, the current fallback bounces them to /signup but doesn't always recover cleanly (Michelle hit a loop). Proposed fix: when `/signup` submits a magic link for an already-authenticated user with missing owners row, also pre-emptively insert the owners row using the newly-provided leader_code, so they self-heal on the next session load. Avoids future manual SQL support tickets.
 
 ### Medium priority — known UX gaps from earlier sessions still standing
 4. **"Consumption Sales" label** wasn't renamed in Session 4's terminology cleanup ("Drinks → Customers"). Consider renaming to "In-Club Sales" if real users find it confusing.
@@ -144,18 +183,20 @@ select code, leader_name from leader_codes order by code;
 -- BERNADETTE2026 | Bernadette Carrillo
 -- ENRIQUE2026    | Enrique Carrillo
 -- JON2026        | Jon Hood
+-- LISA2026       | Lisa Cassity
 -- MARTIN2026     | Martin Banda
 -- RONNIE2026     | Ronnie Craig
 -- YVETTE2026     | Yvette Gomez
 
 select name, email, is_admin, is_leader, leader_code
 from owners
-where is_admin = true or is_leader = true
-order by is_admin desc, name;
--- Ronnie Craig      | azteampossibility@gmail.com | true  | true | RONNIE2026
--- Enrique Carrillo  | thespotnutrition@gmail.com  | true  | true | ENRIQUE2026
--- Jon Hood          | jonhoodfit@gmail.com        | false | true | JON2026
--- Martin Banda      | martinbanda1994@gmail.com   | false | true | MARTIN2026
+order by is_admin desc, is_leader desc, name;
+-- Ronnie Craig      | azteampossibility@gmail.com   | true  | true  | RONNIE2026
+-- Enrique Carrillo  | thespotnutrition@gmail.com    | true  | true  | ENRIQUE2026
+-- Jon Hood          | jonhoodfit@gmail.com          | false | true  | JON2026
+-- Lisa Cassity      | lisacassity@yahoo.com         | false | true  | LISA2026
+-- Martin Banda      | martinbanda1994@gmail.com     | false | true  | MARTIN2026
+-- Michelle Fairman  | standoutnutrition860@gmail.com| false | false | ENRIQUE2026
 -- (Bernadette + Yvette appear here once they sign up + you flip them)
 ```
 
