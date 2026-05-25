@@ -100,6 +100,7 @@ export default function HomePage() {
   });
   const [leaderRollups, setLeaderRollups] = useState<LeaderRollup[]>([]);
   const [attentionItems, setAttentionItems] = useState<string[]>([]);
+  const [inviteCopied, setInviteCopied] = useState(false);
   // Set in useEffect to avoid SSR/hydration date mismatch.
   const [labels, setLabels] = useState({
     today: "Today",
@@ -913,6 +914,60 @@ export default function HomePage() {
       {/* GROUP / LEADERBOARD */}
       <div className={`page ${page === "group" ? "active" : ""}`}>
         <div className="date-row">The Champions — {labels.week}</div>
+
+        {/* LEADER INVITE LINK — only visible to leaders, with their own code baked in */}
+        {owner.is_leader && owner.leader_code && (() => {
+          const inviteUrl = `https://championstracker.org/signup?code=${owner.leader_code}`;
+          return (
+            <>
+              <div className="h-section" style={{ margin: "0 0 12px" }}>
+                Your Team Invite Link
+              </div>
+              <div className="card">
+                <div
+                  style={{
+                    fontSize: 13,
+                    color: "var(--text-dim)",
+                    marginBottom: 10,
+                    lineHeight: 1.4,
+                  }}
+                >
+                  Share this with anyone you want on your team. Their signup is preloaded with your code.
+                </div>
+                <div
+                  style={{
+                    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                    fontSize: 12,
+                    color: "var(--text)",
+                    background: "var(--bg-card-2)",
+                    padding: "10px 12px",
+                    borderRadius: 8,
+                    wordBreak: "break-all",
+                    marginBottom: 12,
+                    userSelect: "all",
+                  }}
+                >
+                  {inviteUrl}
+                </div>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(inviteUrl);
+                      setInviteCopied(true);
+                      setTimeout(() => setInviteCopied(false), 2000);
+                    } catch {
+                      setToast("Couldn't copy — long-press the link above to copy manually.");
+                    }
+                  }}
+                >
+                  {inviteCopied ? "✓ COPIED" : "COPY LINK"}
+                </button>
+              </div>
+            </>
+          );
+        })()}
 
         <div className="card">
           <div className="h-section" style={{ margin: "0 0 12px" }}>
