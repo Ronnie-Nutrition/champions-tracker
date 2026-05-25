@@ -4,7 +4,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "The Champions — Accountability Tracker",
   description:
-    "Daily tracker for the Champions accountability group. 100 consumptions a day. $1,000+ a day. Massive duplication.",
+    "Daily tracker for the Champions accountability group. 100 customers a day. $1,000+ a day. Massive duplication.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
