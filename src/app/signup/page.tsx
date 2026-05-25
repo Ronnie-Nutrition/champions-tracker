@@ -21,7 +21,6 @@ function SignupShell() {
         <div className="logo">
           THE <span>CHAMPIONS</span>
         </div>
-        <div className="topbar-meta">Sign in</div>
       </div>
       <div className="page active" />
     </div>
@@ -105,7 +104,6 @@ function SignupForm() {
         <div className="logo">
           THE <span>CHAMPIONS</span>
         </div>
-        <div className="topbar-meta">Sign in</div>
       </div>
 
       <div className="page active" style={{ paddingTop: 24 }}>
