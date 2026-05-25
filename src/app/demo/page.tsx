@@ -104,7 +104,7 @@ const SLIDES: Slide[] = [
       <>
         <p style={p}>Every leader gets a personal code — yours is <strong style={{ color: "#d4ff3f" }}>DEMO2026</strong>.</p>
         <p style={p}>The shareable link bakes the code in, so the new owner doesn't have to type anything:</p>
-        <div style={linkBox}>https://thechampions.club/signup?code=DEMO2026</div>
+        <div style={linkBox}>https://championstracker.org/signup?code=DEMO2026</div>
         <p style={{ ...p, color: "#9ca3af", fontSize: 14 }}>
           Send it in iMessage, in your Herbalife group chat, in your Instagram bio. Anywhere.
         </p>
@@ -592,7 +592,7 @@ function ShareCard() {
           border: "1px solid #2d3530",
         }}
       >
-        thechampions.club/signup?code=<strong>DEMO2026</strong>
+        championstracker.org/signup?code=<strong>DEMO2026</strong>
       </div>
       <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
         <ShareBtn label="📱 iMessage" />
@@ -645,7 +645,7 @@ function EmailMock() {
       <div style={{ fontSize: 16, fontWeight: 800, marginTop: 8, color: "#111" }}>
         Your Champions sign-in link
       </div>
-      <div style={{ fontSize: 13, color: "#6b7280", marginTop: 4 }}>from noreply@thechampions.club</div>
+      <div style={{ fontSize: 13, color: "#6b7280", marginTop: 4 }}>from hello@championstracker.org</div>
       <div style={{ borderTop: "1px solid #e5e7eb", margin: "14px 0", paddingTop: 14 }}>
         <div style={{ fontSize: 14, color: "#374151", lineHeight: 1.55 }}>
           Tap below to finish signing in. Link expires in 60 minutes.

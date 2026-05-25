@@ -37,7 +37,7 @@ function SignupForm() {
   const [error, setError] = useState<string | null>(null);
 
   // Pre-fill leader code from ?code=XXXX so a leader can share
-  // https://thechampions.club/signup?code=RONNIE2026 with a new owner.
+  // https://championstracker.org/signup?code=RONNIE2026 with a new owner.
   useEffect(() => {
     const fromUrl = searchParams.get("code");
     if (fromUrl) setCode(fromUrl.toUpperCase());
