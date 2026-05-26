@@ -101,6 +101,10 @@ export default function HomePage() {
   const [leaderRollups, setLeaderRollups] = useState<LeaderRollup[]>([]);
   const [attentionItems, setAttentionItems] = useState<string[]>([]);
   const [inviteCopied, setInviteCopied] = useState(false);
+  // The actual leader's display name (from leader_codes.leader_name), not
+  // a hardcoded value — so Gloria-under-Bernadette sees "Bernadette
+  // Carrillo • Gloria Carrillo" instead of the old "Enrique Carrillo • …".
+  const [leaderName, setLeaderName] = useState<string | null>(null);
   // Set in useEffect to avoid SSR/hydration date mismatch.
   const [labels, setLabels] = useState({
     today: "Today",
@@ -144,6 +148,21 @@ export default function HomePage() {
         const me = lookup.owner;
         setOwner(me);
         setConn({ kind: "ok", codes: 0 });
+
+        // Resolve the leader's actual display name. leader_codes is publicly
+        // readable (RLS); a missing or null result just falls back to the
+        // owner's own name in headerMeta.
+        if (me.leader_code) {
+          supabase
+            .from("leader_codes")
+            .select("leader_name")
+            .eq("code", me.leader_code)
+            .maybeSingle()
+            .then(({ data }) => {
+              if (cancelled) return;
+              if (data?.leader_name) setLeaderName(data.leader_name);
+            });
+        }
 
         // Pull the last ~5 weeks of daily_logs in one shot. Today's row
         // populates the form; the full window feeds streak + this-week sums.
@@ -404,7 +423,11 @@ export default function HomePage() {
   }, [router]);
 
   const headerMeta = owner
-    ? `${page === "admin" ? "Admin" : "Enrique Carrillo"} • ${owner.name}`
+    ? page === "admin"
+      ? `Admin • ${owner.name}`
+      : leaderName && leaderName !== owner.name
+        ? `${leaderName} • ${owner.name}`
+        : owner.name
     : "…";
 
   async function handleSignOut() {
