@@ -36,6 +36,14 @@ type LeaderRollup = {
   ownerCount: number;
   drinks: number;
 };
+type TopChampion = {
+  owner_id: string;
+  name: string;
+  leader_code: string | null;
+  leader_name: string | null;
+  drinks: number;
+  sales: number;
+};
 type DailyField =
   | "cons"
   | "consSales"
@@ -100,6 +108,7 @@ export default function HomePage() {
     totalOwners: 0,
   });
   const [leaderRollups, setLeaderRollups] = useState<LeaderRollup[]>([]);
+  const [topChampions, setTopChampions] = useState<TopChampion[]>([]);
   const [attentionItems, setAttentionItems] = useState<string[]>([]);
   // Admin drill-down: when an admin clicks a row in the "By Leader Code"
   // rollup, the Group tab swaps to that leader's downline instead of the
@@ -391,6 +400,26 @@ export default function HomePage() {
           .map((r) => ({ ...r, name: codeToName.get(r.code) ?? null }))
           .sort((a, b) => b.drinks - a.drinks)
       );
+
+      // Cross-downline Top 10 — ranks every individual owner across every
+      // leader's downline by this-week drinks (tiebreak: sales). Admin-only
+      // view so Enrique can see the team-wide champions, not just his own
+      // direct signups. Mirrors group-leaderboard sort to stay consistent.
+      const champions: TopChampion[] = allOwners.map((o) => {
+        const wk = sumThisWeek(logsByOwner.get(o.id) ?? []);
+        return {
+          owner_id: o.id,
+          name: o.name,
+          leader_code: o.leader_code ?? null,
+          leader_name: o.leader_code
+            ? codeToName.get(o.leader_code) ?? null
+            : null,
+          drinks: wk.consumptions,
+          sales: wk.consumption_sales + wk.retail_sales,
+        };
+      });
+      champions.sort((a, b) => b.drinks - a.drinks || b.sales - a.sales);
+      setTopChampions(champions.slice(0, 10));
 
       // Needs Attention — broke-streak owners + missing wrap-ups
       const sevenDaysAgo = new Date();
@@ -1266,6 +1295,47 @@ export default function HomePage() {
         <button className="btn-secondary" onClick={() => go("group")}>
           View Full Leaderboard →
         </button>
+
+        <div className="h-section">🏆 Top 10 Champions — All Teams</div>
+        <div className="card">
+          {topChampions.length === 0 ? (
+            <div
+              style={{
+                color: "var(--text-mute)",
+                padding: "12px",
+                fontSize: 13,
+              }}
+            >
+              No data yet.
+            </div>
+          ) : (
+            topChampions.map((c, i) => (
+              <PulseRow
+                key={c.owner_id}
+                label={
+                  <>
+                    <span style={{ color: "var(--text-mute)", marginRight: 6 }}>
+                      #{i + 1}
+                    </span>
+                    {c.name}
+                    {c.leader_name && (
+                      <span
+                        style={{
+                          color: "var(--text-dim)",
+                          marginLeft: 6,
+                          fontSize: 12,
+                        }}
+                      >
+                        — {c.leader_name}&apos;s team
+                      </span>
+                    )}
+                  </>
+                }
+                value={c.drinks.toLocaleString()}
+              />
+            ))
+          )}
+        </div>
 
         <div className="h-section">By Leader Code</div>
         <div className="card">
