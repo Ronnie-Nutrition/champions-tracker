@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { getOrCreateOwner, signOut, type Owner } from "@/lib/owner";
@@ -32,6 +32,7 @@ type GroupRow = {
 };
 type LeaderRollup = {
   code: string;
+  name: string | null;
   ownerCount: number;
   drinks: number;
 };
@@ -100,6 +101,16 @@ export default function HomePage() {
   });
   const [leaderRollups, setLeaderRollups] = useState<LeaderRollup[]>([]);
   const [attentionItems, setAttentionItems] = useState<string[]>([]);
+  // Admin drill-down: when an admin clicks a row in the "By Leader Code"
+  // rollup, the Group tab swaps to that leader's downline instead of the
+  // admin's own. null = default (show own group via loadGroup).
+  const [adminViewingLeader, setAdminViewingLeader] = useState<{
+    code: string;
+    name: string;
+  } | null>(null);
+  // Stale-response guard for refreshGroupForCode — rapid clicks across
+  // different leaders would otherwise race.
+  const groupRequestIdRef = useRef(0);
   const [inviteCopied, setInviteCopied] = useState(false);
   // The actual leader's display name (from leader_codes.leader_name), not
   // a hardcoded value — so Gloria-under-Bernadette sees "Bernadette
@@ -363,8 +374,22 @@ export default function HomePage() {
         cur.drinks += wk.consumptions;
         byCode.set(o.leader_code, cur);
       }
+
+      // Pre-fetch leader display names so the rollup rows can be clicked to
+      // drill into a specific leader's downline (and the banner that appears
+      // on the Group tab knows what name to show).
+      const { data: codeRows } = await supabase
+        .from("leader_codes")
+        .select("code, leader_name");
+      if (cancelled) return;
+      const codeToName = new Map<string, string | null>(
+        (codeRows ?? []).map((r) => [r.code, r.leader_name])
+      );
+
       setLeaderRollups(
-        Array.from(byCode.values()).sort((a, b) => b.drinks - a.drinks)
+        Array.from(byCode.values())
+          .map((r) => ({ ...r, name: codeToName.get(r.code) ?? null }))
+          .sort((a, b) => b.drinks - a.drinks)
       );
 
       // Needs Attention — broke-streak owners + missing wrap-ups
@@ -429,6 +454,103 @@ export default function HomePage() {
         ? `${leaderName} • ${owner.name}`
         : owner.name
     : "…";
+
+  // Admin drill-down: fetch + render any leader's downline in the Group tab.
+  // Mirrors the inline loadGroup() inside the mount useEffect but parameterised
+  // by leader_code and protected by a request-id ref so rapid clicks across
+  // leaders don't let a stale response overwrite the newest one. RLS still
+  // applies: only is_admin owners can query owners outside their own
+  // leader_code (see migration 003 — owners_admin_read, daily_logs_select_visible).
+  async function refreshGroupForCode(leaderCode: string, myOwnerId: string) {
+    const myRequestId = ++groupRequestIdRef.current;
+
+    const { data: ownerList, error: ownerErr } = await supabase
+      .from("owners")
+      .select("id, name")
+      .eq("leader_code", leaderCode);
+    if (myRequestId !== groupRequestIdRef.current) return;
+    if (ownerErr || !ownerList?.length) {
+      setGroupRows([]);
+      setGroupPulse({
+        consumptions: 0,
+        sales: 0,
+        newCustomers: 0,
+        activeOwners: 0,
+        totalOwners: 0,
+      });
+      return;
+    }
+
+    const ownerIds = ownerList.map((o) => o.id);
+    const sinceDate = new Date();
+    sinceDate.setDate(sinceDate.getDate() - 35);
+    const { data: logs, error: logErr } = await supabase
+      .from("daily_logs")
+      .select(
+        "owner_id, log_date, consumptions, consumption_sales, retail_sales, new_customers, deliveries, social_posts"
+      )
+      .in("owner_id", ownerIds)
+      .gte("log_date", todayLocalISO(sinceDate))
+      .lte("log_date", todayLocalISO());
+    if (myRequestId !== groupRequestIdRef.current) return;
+    if (logErr) return;
+
+    const logsByOwner = new Map<string, DailyLogRow[]>();
+    for (const log of logs ?? []) {
+      const arr = logsByOwner.get(log.owner_id) ?? [];
+      arr.push(log as DailyLogRow);
+      logsByOwner.set(log.owner_id, arr);
+    }
+
+    const weekStartISO = todayLocalISO(mondayOfWeek());
+    const todayISO = todayLocalISO();
+
+    const groupedRows: GroupRow[] = ownerList.map((o) => {
+      const ownerLogs = logsByOwner.get(o.id) ?? [];
+      const wk = sumThisWeek(ownerLogs);
+      return {
+        owner_id: o.id,
+        name: o.id === myOwnerId ? "You" : o.name,
+        drinks: wk.consumptions,
+        sales: wk.consumption_sales + wk.retail_sales,
+        newCustomers: wk.new_customers,
+        streak: computeStreak(ownerLogs),
+        isMe: o.id === myOwnerId,
+      };
+    });
+
+    groupedRows.sort((a, b) => b.drinks - a.drinks || b.sales - a.sales);
+
+    const activeOwners = ownerList.filter((o) => {
+      const ownerLogs = logsByOwner.get(o.id) ?? [];
+      return ownerLogs.some(
+        (l) => l.log_date >= weekStartISO && l.log_date <= todayISO
+      );
+    }).length;
+
+    if (myRequestId !== groupRequestIdRef.current) return;
+    setGroupRows(groupedRows);
+    setGroupPulse({
+      consumptions: groupedRows.reduce((s, r) => s + r.drinks, 0),
+      sales: groupedRows.reduce((s, r) => s + r.sales, 0),
+      newCustomers: groupedRows.reduce((s, r) => s + r.newCustomers, 0),
+      activeOwners,
+      totalOwners: ownerList.length,
+    });
+  }
+
+  function viewLeaderTeam(code: string, name: string) {
+    if (!owner) return;
+    setAdminViewingLeader({ code, name });
+    go("group");
+    refreshGroupForCode(code, owner.id).catch(() => {});
+  }
+
+  function backToMyTeam() {
+    if (!owner?.leader_code) return;
+    setAdminViewingLeader(null);
+    refreshGroupForCode(owner.leader_code, owner.id).catch(() => {});
+  }
 
   async function handleSignOut() {
     await signOut();
@@ -943,8 +1065,64 @@ export default function HomePage() {
       <div className={`page ${page === "group" ? "active" : ""}`}>
         <div className="date-row">The Champions — {labels.week}</div>
 
-        {/* LEADER INVITE LINK — only visible to leaders, with their own code baked in */}
-        {owner.is_leader && owner.leader_code && (() => {
+        {/* ADMIN DRILL-DOWN BANNER — shown when an admin clicked into another
+            leader's team via the Admin tab's By Leader Code rollup. */}
+        {adminViewingLeader && (
+          <div
+            className="card"
+            style={{
+              borderLeft: "3px solid var(--accent)",
+              marginBottom: 12,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: 12,
+              }}
+            >
+              <div style={{ minWidth: 0 }}>
+                <div
+                  style={{
+                    fontSize: 10,
+                    color: "var(--text-mute)",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.5px",
+                  }}
+                >
+                  Admin view
+                </div>
+                <div style={{ fontSize: 14, marginTop: 2 }}>
+                  Viewing <strong>{adminViewingLeader.name}</strong>&apos;s team
+                  <span
+                    style={{
+                      color: "var(--text-mute)",
+                      marginLeft: 6,
+                      fontSize: 12,
+                    }}
+                  >
+                    ({adminViewingLeader.code})
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={backToMyTeam}
+                style={{ flexShrink: 0, whiteSpace: "nowrap" }}
+              >
+                ← MY TEAM
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* LEADER INVITE LINK — only visible to leaders, with their own code baked in.
+            Hidden during admin drill-down to avoid confusion: the link is the admin's
+            own invite, not the leader they're currently viewing. */}
+        {owner.is_leader && owner.leader_code && !adminViewingLeader && (() => {
           const inviteUrl = `https://championstracker.org/signup?code=${owner.leader_code}`;
           return (
             <>
@@ -1103,18 +1281,46 @@ export default function HomePage() {
             </div>
           ) : (
             leaderRollups.map((r) => (
-              <PulseRow
+              <button
                 key={r.code}
-                label={
-                  <>
-                    {r.code}{" "}
-                    <span style={{ color: "var(--text-mute)" }}>
-                      ({r.ownerCount} {r.ownerCount === 1 ? "owner" : "owners"})
-                    </span>
-                  </>
-                }
-                value={r.drinks.toLocaleString()}
-              />
+                type="button"
+                onClick={() => viewLeaderTeam(r.code, r.name ?? r.code)}
+                style={{
+                  width: "100%",
+                  background: "transparent",
+                  border: "none",
+                  padding: 0,
+                  cursor: "pointer",
+                  textAlign: "left",
+                  color: "inherit",
+                  font: "inherit",
+                  display: "block",
+                }}
+                aria-label={`View ${r.name ?? r.code} team`}
+              >
+                <PulseRow
+                  label={
+                    <>
+                      {r.code}
+                      {r.name && (
+                        <span
+                          style={{
+                            color: "var(--text-dim)",
+                            marginLeft: 6,
+                          }}
+                        >
+                          — {r.name}
+                        </span>
+                      )}{" "}
+                      <span style={{ color: "var(--text-mute)" }}>
+                        ({r.ownerCount}{" "}
+                        {r.ownerCount === 1 ? "owner" : "owners"})
+                      </span>
+                    </>
+                  }
+                  value={`${r.drinks.toLocaleString()} ›`}
+                />
+              </button>
             ))
           )}
         </div>
