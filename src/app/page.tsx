@@ -7,6 +7,8 @@ import { getOrCreateOwner, signOut, type Owner } from "@/lib/owner";
 import {
   loggingLabel,
   mondayOfWeek,
+  mondayOfWeekOffset,
+  sundayOfWeek,
   todayLabel,
   todayLocalISO,
   weekLabel,
@@ -16,6 +18,7 @@ import {
   EMPTY_WEEK,
   formatMoney,
   sumThisWeek,
+  sumWeek,
   type DailyLogRow,
   type WeekSums,
 } from "@/lib/aggregate";
@@ -91,6 +94,11 @@ export default function HomePage() {
   const [owner, setOwner] = useState<Owner | null>(null);
   const [streak, setStreak] = useState<number>(0);
   const [weekSums, setWeekSums] = useState<WeekSums>(EMPTY_WEEK);
+  // Raw daily_logs for the signed-in owner (last ~5 weeks), kept so the Week
+  // tab can recompute totals for any past week the owner steps back to.
+  const [myLogs, setMyLogs] = useState<DailyLogRow[]>([]);
+  // 0 = this week, -1 = last week, etc. Drives the Week tab's look-back stepper.
+  const [weekOffset, setWeekOffset] = useState(0);
   const [groupRows, setGroupRows] = useState<GroupRow[]>([]);
   const [groupPulse, setGroupPulse] = useState({
     consumptions: 0,
@@ -217,6 +225,7 @@ export default function HomePage() {
             social: todayRow.social_posts ?? 0,
           });
         }
+        setMyLogs(rows);
         setStreak(computeStreak(rows));
         setWeekSums(sumThisWeek(rows));
         setLoadState("ready");
@@ -588,6 +597,8 @@ export default function HomePage() {
 
   function go(p: PageKey) {
     setPage(p);
+    // Always land on the current week when (re)opening the Week tab.
+    if (p === "week") setWeekOffset(0);
     if (typeof window !== "undefined") window.scrollTo(0, 0);
   }
 
@@ -633,6 +644,7 @@ export default function HomePage() {
       .order("log_date", { ascending: false });
     if (error) return;
     const rows = (history ?? []) as DailyLogRow[];
+    setMyLogs(rows);
     setStreak(computeStreak(rows));
     setWeekSums(sumThisWeek(rows));
   }
@@ -784,6 +796,23 @@ export default function HomePage() {
       </div>
     );
   }
+
+  // Week tab look-back: derive the selected week's window, label, and sums.
+  // offset 0 = current week (sum Mon→today, matches Home); past weeks sum the
+  // full Mon→Sun so a finished week shows its complete total.
+  const isCurrentWeek = weekOffset === 0;
+  const selectedMonday = mondayOfWeekOffset(weekOffset);
+  const selectedSunday = sundayOfWeek(selectedMonday);
+  const selectedStartISO = todayLocalISO(selectedMonday);
+  const selectedEndISO = isCurrentWeek
+    ? todayLocalISO()
+    : todayLocalISO(selectedSunday);
+  const viewWeekSums = isCurrentWeek
+    ? weekSums
+    : sumWeek(myLogs, selectedStartISO, selectedEndISO);
+  const selectedWeekLabel = weekLabel(selectedMonday);
+  // Don't let owners page back past the data window we loaded (~5 weeks).
+  const canGoPrev = weekOffset > -4;
 
   return (
     <div className="phone">
@@ -995,34 +1024,68 @@ export default function HomePage() {
 
       {/* WEEKLY WRAP-UP */}
       <div className={`page ${page === "week" ? "active" : ""}`}>
-        <div className="date-row">🏆 Sunday Wrap-Up — {labels.week}</div>
+        <div className="date-row">
+          {isCurrentWeek ? "🏆 Sunday Wrap-Up" : "📅 Past Week"} —{" "}
+          {selectedWeekLabel}
+        </div>
+
+        {/* Look-back stepper: page through this week and prior weeks. */}
+        <div className="week-stepper">
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => setWeekOffset((o) => o - 1)}
+            disabled={!canGoPrev}
+          >
+            ◀ Prev
+          </button>
+          <span className="week-stepper-label">
+            {isCurrentWeek ? "This week" : selectedWeekLabel}
+          </span>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => setWeekOffset((o) => Math.min(0, o + 1))}
+            disabled={isCurrentWeek}
+          >
+            Next ▶
+          </button>
+        </div>
 
         <div className="h-section">Auto-Filled From Your Dailies</div>
         <div className="auto-grid">
-          <AutoCell label="Customers" value={String(weekSums.consumptions)} />
+          <AutoCell label="Customers" value={String(viewWeekSums.consumptions)} />
           <AutoCell
             label="Consumption Sales"
-            value={formatMoney(weekSums.consumption_sales)}
+            value={formatMoney(viewWeekSums.consumption_sales)}
           />
           <AutoCell
             label="Retail Sales"
-            value={formatMoney(weekSums.retail_sales)}
+            value={formatMoney(viewWeekSums.retail_sales)}
           />
           <AutoCell
             label="New Customers"
-            value={String(weekSums.new_customers)}
+            value={String(viewWeekSums.new_customers)}
           />
           <AutoCell
             label="Deliveries"
-            value={String(weekSums.deliveries)}
+            value={String(viewWeekSums.deliveries)}
           />
           <AutoCell
             label="Social Posts"
-            value={String(weekSums.social_posts)}
+            value={String(viewWeekSums.social_posts)}
             wide
           />
         </div>
 
+        {!isCurrentWeek && (
+          <div className="past-week-note">
+            Totals for {selectedWeekLabel} (Mon–Sun). This is a read-only look
+            back — submit your wrap-up from “This week.”
+          </div>
+        )}
+
+        {isCurrentWeek && (
         <form onSubmit={submitWeek}>
           <div className="h-section">Fill In The Rest</div>
 
@@ -1088,6 +1151,7 @@ export default function HomePage() {
             SUBMIT WEEK
           </button>
         </form>
+        )}
       </div>
 
       {/* GROUP / LEADERBOARD */}

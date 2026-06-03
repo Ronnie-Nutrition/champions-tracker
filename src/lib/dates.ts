@@ -36,6 +36,22 @@ export function mondayOfWeek(d: Date = new Date()): Date {
   return monday;
 }
 
+// Monday of the week that is `offset` weeks away from the current week.
+// offset 0 = this week, -1 = last week, etc.
+export function mondayOfWeekOffset(offset: number, d: Date = new Date()): Date {
+  const monday = mondayOfWeek(d);
+  monday.setDate(monday.getDate() + offset * 7);
+  return monday;
+}
+
+// Sunday (end) of the week that starts on the given Monday.
+export function sundayOfWeek(monday: Date): Date {
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  sunday.setHours(0, 0, 0, 0);
+  return sunday;
+}
+
 export function weekLabel(d: Date = new Date()): string {
   const monday = mondayOfWeek(d);
   const monthDay = monday.toLocaleDateString("en-US", {

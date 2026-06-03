@@ -46,13 +46,15 @@ export function computeStreak(rows: DailyLogRow[], now: Date = new Date()): numb
   return streak;
 }
 
-// Sum every column for rows in [Monday-of-this-week, today]
-export function sumThisWeek(rows: DailyLogRow[], now: Date = new Date()): WeekSums {
-  const weekStartISO = todayLocalISO(mondayOfWeek(now));
-  const todayISO = todayLocalISO(now);
+// Sum every column for rows whose log_date falls in [startISO, endISO] inclusive.
+export function sumWeek(
+  rows: DailyLogRow[],
+  startISO: string,
+  endISO: string
+): WeekSums {
   const sums: WeekSums = { ...EMPTY_WEEK };
   for (const r of rows) {
-    if (r.log_date < weekStartISO || r.log_date > todayISO) continue;
+    if (r.log_date < startISO || r.log_date > endISO) continue;
     sums.consumptions += r.consumptions ?? 0;
     sums.consumption_sales += r.consumption_sales ?? 0;
     sums.retail_sales += r.retail_sales ?? 0;
@@ -61,6 +63,11 @@ export function sumThisWeek(rows: DailyLogRow[], now: Date = new Date()): WeekSu
     sums.social_posts += r.social_posts ?? 0;
   }
   return sums;
+}
+
+// Sum every column for rows in [Monday-of-this-week, today]
+export function sumThisWeek(rows: DailyLogRow[], now: Date = new Date()): WeekSums {
+  return sumWeek(rows, todayLocalISO(mondayOfWeek(now)), todayLocalISO(now));
 }
 
 export function formatMoney(n: number): string {
