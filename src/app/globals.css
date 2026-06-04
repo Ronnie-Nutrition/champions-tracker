@@ -133,6 +133,29 @@ body {
   letter-spacing: 1px;
 }
 
+.date-picker {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.date-chip {
+  flex: 1;
+  padding: 9px 6px;
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+.date-chip.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0a0a0a;
+}
+
 .week-stepper {
   display: flex;
   align-items: center;

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { getOrCreateOwner, signOut, type Owner } from "@/lib/owner";
 import {
+  backfillDateOptions,
   loggingLabel,
   mondayOfWeek,
   mondayOfWeekOffset,
@@ -12,6 +13,7 @@ import {
   todayLabel,
   todayLocalISO,
   weekLabel,
+  type LogDateOption,
 } from "@/lib/dates";
 import {
   computeStreak,
@@ -62,6 +64,12 @@ type ConnState =
 
 type LoadState = "loading" | "ready" | "error";
 
+// How many days back a member may log. 0 = today only, 1 = + yesterday,
+// 2 = + the day before. Capped here so the board can't be edited after the
+// fact beyond a reasonable "forgot to hit send" window. Start at 1; bump to
+// 2 if Ronnie wants a wider grace window.
+const MAX_BACKFILL_DAYS = 1;
+
 const ZERO_DAILY: Record<DailyField, number> = {
   cons: 0,
   consSales: 0,
@@ -84,6 +92,10 @@ export default function HomePage() {
   const router = useRouter();
   const [page, setPage] = useState<PageKey>("home");
   const [daily, setDaily] = useState<Record<DailyField, number>>(ZERO_DAILY);
+  // Which date the daily form is logging. Defaults to today; the member can
+  // switch to a recent prior day to backfill one they missed.
+  const [logDateISO, setLogDateISO] = useState<string>(todayLocalISO());
+  const [dateOptions, setDateOptions] = useState<LogDateOption[]>([]);
   const [customerAppreciation, setCustomerAppreciation] = useState<"yes" | "no">(
     "yes"
   );
@@ -146,6 +158,7 @@ export default function HomePage() {
       logging: loggingLabel(),
       week: weekLabel(),
     });
+    setDateOptions(backfillDateOptions(MAX_BACKFILL_DAYS));
 
     let cancelled = false;
     let loadInFlight = false;
@@ -599,7 +612,29 @@ export default function HomePage() {
     setPage(p);
     // Always land on the current week when (re)opening the Week tab.
     if (p === "week") setWeekOffset(0);
+    // Opening the daily form always defaults to today's numbers.
+    if (p === "log") selectLogDate(todayLocalISO());
     if (typeof window !== "undefined") window.scrollTo(0, 0);
+  }
+
+  // Switch the daily form to a different date, loading whatever was already
+  // logged for that day (or a clean slate) so editing an existing entry —
+  // including a backfilled one — shows its real numbers.
+  function selectLogDate(iso: string) {
+    setLogDateISO(iso);
+    const row = myLogs.find((r) => r.log_date === iso);
+    setDaily(
+      row
+        ? {
+            cons: row.consumptions ?? 0,
+            consSales: row.consumption_sales ?? 0,
+            retail: row.retail_sales ?? 0,
+            newcust: row.new_customers ?? 0,
+            deliv: row.deliveries ?? 0,
+            social: row.social_posts ?? 0,
+          }
+        : ZERO_DAILY
+    );
   }
 
   function haptic() {
@@ -652,10 +687,11 @@ export default function HomePage() {
   async function saveDaily() {
     if (saving || loadState !== "ready" || !owner) return;
     setSaving(true);
+    const isBackfill = logDateISO !== todayLocalISO();
     const { error } = await supabase.from("daily_logs").upsert(
       {
         owner_id: owner.id,
-        log_date: todayLocalISO(),
+        log_date: logDateISO,
         consumptions: daily.cons,
         consumption_sales: daily.consSales,
         retail_sales: daily.retail,
@@ -674,7 +710,9 @@ export default function HomePage() {
     // Re-fetch so streak + this-week sums reflect today's save before
     // we navigate back to home.
     await refreshStats(owner);
-    showToast("🔥 Saved — streak alive!");
+    showToast(
+      isBackfill ? "✅ Backfilled — streak repaired!" : "🔥 Saved — streak alive!"
+    );
     window.setTimeout(() => go("home"), 600);
   }
 
@@ -917,7 +955,31 @@ export default function HomePage() {
 
       {/* DAILY LOG */}
       <div className={`page ${page === "log" ? "active" : ""}`}>
-        <div className="date-row">{labels.logging}</div>
+        {(() => {
+          const sel = dateOptions.find((o) => o.iso === logDateISO);
+          const isToday = logDateISO === todayLocalISO();
+          return (
+            <div className="date-row">
+              {isToday ? "Logging" : "📅 Backfilling"} —{" "}
+              {sel ? sel.full : labels.logging}
+            </div>
+          );
+        })()}
+
+        {dateOptions.length > 1 && (
+          <div className="date-picker">
+            {dateOptions.map((o) => (
+              <button
+                key={o.iso}
+                type="button"
+                className={`date-chip ${o.iso === logDateISO ? "active" : ""}`}
+                onClick={() => selectLogDate(o.iso)}
+              >
+                {o.chip}
+              </button>
+            ))}
+          </div>
+        )}
 
         <NumField
           icon="🥤"
@@ -1015,7 +1077,13 @@ export default function HomePage() {
           onClick={saveDaily}
           disabled={saving || loadState !== "ready"}
         >
-          {saving ? "SAVING…" : "SAVE TODAY"}
+          {saving
+            ? "SAVING…"
+            : logDateISO === todayLocalISO()
+              ? "SAVE TODAY"
+              : `SAVE ${(
+                  dateOptions.find((o) => o.iso === logDateISO)?.chip ?? "DAY"
+                ).toUpperCase()}`}
         </button>
         <button className="btn-secondary" onClick={() => go("home")}>
           Cancel
