@@ -66,9 +66,10 @@ type LoadState = "loading" | "ready" | "error";
 
 // How many days back a member may log. 0 = today only, 1 = + yesterday,
 // 2 = + the day before. Capped here so the board can't be edited after the
-// fact beyond a reasonable "forgot to hit send" window. Start at 1; bump to
-// 2 if Ronnie wants a wider grace window.
-const MAX_BACKFILL_DAYS = 1;
+// fact beyond a reasonable "forgot to hit send" window. Bumped 1 -> 2 on
+// 2026-06-15 (Ronnie's "max two days" grace window) so members can backfill
+// up to two days back without losing the streak.
+const MAX_BACKFILL_DAYS = 2;
 
 const ZERO_DAILY: Record<DailyField, number> = {
   cons: 0,
