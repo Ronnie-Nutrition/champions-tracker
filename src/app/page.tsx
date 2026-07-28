@@ -71,6 +71,16 @@ type LoadState = "loading" | "ready" | "error";
 // up to two days back without losing the streak.
 const MAX_BACKFILL_DAYS = 2;
 
+// How many days of daily_logs we pull on every load. This feeds BOTH the
+// weekly sums (which filter by an explicit date range, so extra history can't
+// change any total) AND computeStreak (which walks back over consecutive
+// logged days). The window is therefore the hard ceiling on how high a streak
+// can ever display: at the old value of 35 the streak froze at 36 (35 loaded
+// days + today), because day 37 was never loaded and looked like a gap. Set
+// wide enough to cover any real streak — a member logging daily since launch
+// will keep counting well past a year. Sums are unaffected by the larger pull.
+const LOG_WINDOW_DAYS = 400;
+
 const ZERO_DAILY: Record<DailyField, number> = {
   cons: 0,
   consSales: 0,
@@ -206,10 +216,12 @@ export default function HomePage() {
             });
         }
 
-        // Pull the last ~5 weeks of daily_logs in one shot. Today's row
+        // Pull the daily_logs window (LOG_WINDOW_DAYS) in one shot. Today's row
         // populates the form; the full window feeds streak + this-week sums.
+        // The window must stay wide enough that computeStreak isn't truncated —
+        // see the LOG_WINDOW_DAYS note above.
         const sinceDate = new Date();
-        sinceDate.setDate(sinceDate.getDate() - 35);
+        sinceDate.setDate(sinceDate.getDate() - LOG_WINDOW_DAYS);
         const { data: history, error: logErr } = await supabase
           .from("daily_logs")
           .select(
@@ -267,7 +279,7 @@ export default function HomePage() {
       const ownerIds = ownerList.map((o) => o.id);
 
       const sinceDate = new Date();
-      sinceDate.setDate(sinceDate.getDate() - 35);
+      sinceDate.setDate(sinceDate.getDate() - LOG_WINDOW_DAYS);
       const { data: logs, error: logErr } = await supabase
         .from("daily_logs")
         .select(
@@ -334,7 +346,7 @@ export default function HomePage() {
       const allOwnerIds = allOwners.map((o) => o.id);
 
       const sinceDate = new Date();
-      sinceDate.setDate(sinceDate.getDate() - 35);
+      sinceDate.setDate(sinceDate.getDate() - LOG_WINDOW_DAYS);
       const { data: logs, error: logErr } = await supabase
         .from("daily_logs")
         .select(
@@ -535,7 +547,7 @@ export default function HomePage() {
 
     const ownerIds = ownerList.map((o) => o.id);
     const sinceDate = new Date();
-    sinceDate.setDate(sinceDate.getDate() - 35);
+    sinceDate.setDate(sinceDate.getDate() - LOG_WINDOW_DAYS);
     const { data: logs, error: logErr } = await supabase
       .from("daily_logs")
       .select(
@@ -668,7 +680,7 @@ export default function HomePage() {
 
   async function refreshStats(forOwner: Owner) {
     const sinceDate = new Date();
-    sinceDate.setDate(sinceDate.getDate() - 35);
+    sinceDate.setDate(sinceDate.getDate() - LOG_WINDOW_DAYS);
     const { data: history, error } = await supabase
       .from("daily_logs")
       .select(
