@@ -39,6 +39,7 @@ create table if not exists daily_logs (
   new_customers      int  default 0,
   deliveries         int  default 0,
   social_posts       int  default 0,
+  daily_volume       numeric(10,2) default 0,  -- Herbalife Volume Points (migration 004)
   created_at         timestamptz default now(),
   updated_at         timestamptz default now(),
   unique (owner_id, log_date)

@@ -8,6 +8,7 @@ export type DailyLogRow = {
   new_customers: number | null;
   deliveries: number | null;
   social_posts: number | null;
+  daily_volume: number | null;
 };
 
 export type WeekSums = {
@@ -17,6 +18,7 @@ export type WeekSums = {
   new_customers: number;
   deliveries: number;
   social_posts: number;
+  daily_volume: number;
 };
 
 export const EMPTY_WEEK: WeekSums = {
@@ -26,6 +28,7 @@ export const EMPTY_WEEK: WeekSums = {
   new_customers: 0,
   deliveries: 0,
   social_posts: 0,
+  daily_volume: 0,
 };
 
 // Consecutive days with at least one daily_log row, counting back from
@@ -61,6 +64,7 @@ export function sumWeek(
     sums.new_customers += r.new_customers ?? 0;
     sums.deliveries += r.deliveries ?? 0;
     sums.social_posts += r.social_posts ?? 0;
+    sums.daily_volume += Number(r.daily_volume ?? 0);
   }
   return sums;
 }
@@ -73,4 +77,11 @@ export function sumThisWeek(rows: DailyLogRow[], now: Date = new Date()): WeekSu
 export function formatMoney(n: number): string {
   // $2,847 — no decimals, whole dollars only (matches daily_logs schema)
   return `$${n.toLocaleString("en-US")}`;
+}
+
+// Volume Points carry one decimal — "2,847.4 VP". Unlike money they are not
+// rounded to whole units, because Herbalife reports them fractionally and a
+// club's monthly qualification can turn on a fraction of a point.
+export function formatVolume(n: number): string {
+  return `${n.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} VP`;
 }

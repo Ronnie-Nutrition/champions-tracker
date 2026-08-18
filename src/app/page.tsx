@@ -55,7 +55,8 @@ type DailyField =
   | "retail"
   | "newcust"
   | "deliv"
-  | "social";
+  | "social"
+  | "volume";
 
 type ConnState =
   | { kind: "checking" }
@@ -88,6 +89,7 @@ const ZERO_DAILY: Record<DailyField, number> = {
   newcust: 0,
   deliv: 0,
   social: 0,
+  volume: 0,
 };
 
 const FIELD_LABELS: Record<DailyField, string> = {
@@ -97,6 +99,7 @@ const FIELD_LABELS: Record<DailyField, string> = {
   newcust: "New customers today",
   deliv: "Deliveries today",
   social: "Social posts today",
+  volume: "Volume points today",
 };
 
 export default function HomePage() {
@@ -225,7 +228,7 @@ export default function HomePage() {
         const { data: history, error: logErr } = await supabase
           .from("daily_logs")
           .select(
-            "log_date, consumptions, consumption_sales, retail_sales, new_customers, deliveries, social_posts"
+            "log_date, consumptions, consumption_sales, retail_sales, new_customers, deliveries, social_posts, daily_volume"
           )
           .eq("owner_id", me.id)
           .gte("log_date", todayLocalISO(sinceDate))
@@ -249,6 +252,7 @@ export default function HomePage() {
             newcust: todayRow.new_customers ?? 0,
             deliv: todayRow.deliveries ?? 0,
             social: todayRow.social_posts ?? 0,
+            volume: Number(todayRow.daily_volume ?? 0),
           });
         }
         setMyLogs(rows);
@@ -283,7 +287,7 @@ export default function HomePage() {
       const { data: logs, error: logErr } = await supabase
         .from("daily_logs")
         .select(
-          "owner_id, log_date, consumptions, consumption_sales, retail_sales, new_customers, deliveries, social_posts"
+          "owner_id, log_date, consumptions, consumption_sales, retail_sales, new_customers, deliveries, social_posts, daily_volume"
         )
         .in("owner_id", ownerIds)
         .gte("log_date", todayLocalISO(sinceDate))
@@ -350,7 +354,7 @@ export default function HomePage() {
       const { data: logs, error: logErr } = await supabase
         .from("daily_logs")
         .select(
-          "owner_id, log_date, consumptions, consumption_sales, retail_sales, new_customers, deliveries, social_posts"
+          "owner_id, log_date, consumptions, consumption_sales, retail_sales, new_customers, deliveries, social_posts, daily_volume"
         )
         .in("owner_id", allOwnerIds)
         .gte("log_date", todayLocalISO(sinceDate))
@@ -551,7 +555,7 @@ export default function HomePage() {
     const { data: logs, error: logErr } = await supabase
       .from("daily_logs")
       .select(
-        "owner_id, log_date, consumptions, consumption_sales, retail_sales, new_customers, deliveries, social_posts"
+        "owner_id, log_date, consumptions, consumption_sales, retail_sales, new_customers, deliveries, social_posts, daily_volume"
       )
       .in("owner_id", ownerIds)
       .gte("log_date", todayLocalISO(sinceDate))
@@ -645,6 +649,7 @@ export default function HomePage() {
             newcust: row.new_customers ?? 0,
             deliv: row.deliveries ?? 0,
             social: row.social_posts ?? 0,
+            volume: Number(row.daily_volume ?? 0),
           }
         : ZERO_DAILY
     );
@@ -684,7 +689,7 @@ export default function HomePage() {
     const { data: history, error } = await supabase
       .from("daily_logs")
       .select(
-        "log_date, consumptions, consumption_sales, retail_sales, new_customers, deliveries, social_posts"
+        "log_date, consumptions, consumption_sales, retail_sales, new_customers, deliveries, social_posts, daily_volume"
       )
       .eq("owner_id", forOwner.id)
       .gte("log_date", todayLocalISO(sinceDate))
@@ -711,6 +716,7 @@ export default function HomePage() {
         new_customers: daily.newcust,
         deliveries: daily.deliv,
         social_posts: daily.social,
+        daily_volume: daily.volume,
         updated_at: new Date().toISOString(),
       },
       { onConflict: "owner_id,log_date" }
@@ -1047,6 +1053,26 @@ export default function HomePage() {
           ]}
           onBump={(n) => bump("retail", n)}
           subLabel="— tap number to type exact amount"
+        />
+
+        {/* Volume Points. Auto-filled from the weekly HLMyClub receipt export by
+            scripts/backfill_from_hlmyclub.py, so it is usually already populated
+            before anyone opens the form. Left editable so a day can be corrected
+            by hand, or entered mid-week before the Monday export runs. */}
+        <NumField
+          icon="🏆"
+          label="Volume Points"
+          value={daily.volume}
+          goalHint="Auto-fills from Monday's export"
+          editable
+          onEdit={() => editField("volume")}
+          quickButtons={[
+            { delta: -10, label: "−10", minus: true },
+            { delta: 10, label: "+10" },
+            { delta: 50, label: "+50" },
+          ]}
+          onBump={(n) => bump("volume", n)}
+          subLabel="— tap number to type exact VP"
         />
 
         <NumField
