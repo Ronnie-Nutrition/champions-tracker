@@ -16,7 +16,13 @@ Receipts are deduped by Receipt Number across overlapping exports, newest file w
 so a receipt that was Pending in an early export picks up its later Accepted status.
 Void is excluded; Pending is INCLUDED (excluding it lost 5% of consumptions vs hand).
 
-Read-only by default. Pass --send to upsert.
+PARTIAL DAYS: an export pulled mid-shift only contains the receipts rung up so far.
+The 2026-08-17 export was taken at 17:46 and held 5 of a normal Monday's 20-32
+consumptions. Such a day is still written (a real-but-low row beats a hole, which
+would zero the owner's streak), but it MUST be corrected once the next full export
+lands:  --refresh --from 2026-08-17 --to 2026-08-17 --send
+
+Read-only by default. Pass --send to write.
 """
 import argparse, collections, csv, datetime, glob, json, os, urllib.request, urllib.error
 import openpyxl
@@ -84,6 +90,12 @@ def load_first_visits():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--send", action="store_true", help="actually write to daily_logs")
+    ap.add_argument("--refresh", action="store_true",
+                    help="OVERWRITE days that already have a row, instead of skipping them. "
+                         "Use this to correct a day that was first written from a truncated "
+                         "export (see the partial-day note in the module docstring). It will "
+                         "clobber hand-entered deliveries/social_posts/new_customers for those "
+                         "days, so always pass an explicit narrow --from/--to.")
     ap.add_argument("--volume-only", action="store_true",
                     help="only PATCH daily_volume onto rows that already exist "
                          "(use after migration 004; the normal path skips existing rows)")
@@ -93,6 +105,10 @@ def main():
                     help="zero (default): leave new_customers at 0 for Ysela to fill going forward. "
                          "derived: use Customer Report First Visit, which ran +22%% vs Ronnie's hand count.")
     args = ap.parse_args()
+
+    if args.refresh and not args.end:
+        raise SystemExit("--refresh requires an explicit --to, so it cannot silently "
+                         "overwrite days you have already hand-corrected.")
 
     receipts, files = load_receipts()
     newc = load_first_visits()
@@ -142,7 +158,7 @@ def main():
     d = start
     while d <= end:
         iso = d.isoformat()
-        if iso in existing:
+        if iso in existing and not args.refresh:
             skipped.append(iso)
         elif d in agg:
             a = agg[d]
