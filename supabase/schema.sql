@@ -65,6 +65,18 @@ create table if not exists weekly_wrapups (
 );
 
 -- =====================================================================
+-- Data API grants. From 2026-10-30 Supabase no longer auto-grants API
+-- access to NEW tables in public, so a fresh project built from this
+-- file would return "permission denied" without these. The live project
+-- already has them (tables predate the change); re-running is a no-op.
+-- RLS (migration 003) still decides which rows each role sees; anon
+-- needs select for the signup form's leader-code check.
+-- =====================================================================
+grant select on public.leader_codes, public.owners, public.daily_logs, public.weekly_wrapups to anon;
+grant select, insert, update, delete on public.leader_codes, public.owners, public.daily_logs, public.weekly_wrapups to authenticated;
+grant select, insert, update, delete on public.leader_codes, public.owners, public.daily_logs, public.weekly_wrapups to service_role;
+
+-- =====================================================================
 -- Seed: the two real admin/leader codes. Every other leader is added
 -- one-at-a-time via SQL as they onboard (NOT seeded here) so the table
 -- only ever contains codes that map to a real person.
