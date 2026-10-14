@@ -97,8 +97,10 @@ def main():
                          "clobber hand-entered deliveries/social_posts/new_customers for those "
                          "days, so always pass an explicit narrow --from/--to.")
     ap.add_argument("--volume-only", action="store_true",
-                    help="only PATCH daily_volume onto rows that already exist "
-                         "(use after migration 004; the normal path skips existing rows)")
+                    help="only PATCH daily_volume onto rows that already exist. The normal "
+                         "write path sets daily_volume itself, so this is only for repairing "
+                         "rows written before it did. It stamps EVERY existing row in range, "
+                         "hand-entered ones included, so keep --from/--to narrow.")
     ap.add_argument("--from", dest="start", default="2026-06-23")
     ap.add_argument("--to",   dest="end",   default=None, help="default: last day with receipts")
     ap.add_argument("--new-customers", choices=["zero", "derived"], default="zero",
@@ -167,7 +169,8 @@ def main():
                              consumption_sales=round(a["consumption_sales"]),
                              retail_sales=round(a["retail_sales"]),
                              new_customers=newc.get(d, 0) if args.new_customers == "derived" else 0,
-                             deliveries=0, social_posts=0))
+                             deliveries=0, social_posts=0,
+                             daily_volume=round(a["volume"], 2)))
         d += datetime.timedelta(days=1)
 
     print(f"{len(rows)} days to write, {len(skipped)} already logged (left untouched)")
